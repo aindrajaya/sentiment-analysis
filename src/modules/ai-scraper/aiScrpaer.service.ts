@@ -66,9 +66,9 @@ export async function askAi(req: Request, res: Response) {
       apiKey: process.env.COHERE_API_KEY, // Default
       model: "rerank-multilingual-v2.0",
     });
-    // TODO: when the feature is ready to production, we need to:
-    // 1. Change the rerank model and provider to pure free model and provider
-    // 2. Create a custom algorithm to handle the limitation
+    // TODO: When the feature is ready to launch, we need to:
+    //  1. Change the rerank model and provider to a free model and provider.
+    //  2. Create a custom algorithm to handle the limitation.
     const rerankedDocuments = await cohereRerank.rerank(results, task, {
       topN: 20,
     });
