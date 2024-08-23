@@ -10,7 +10,11 @@ import { FaissStore } from "@langchain/community/vectorstores/faiss";
 
 // ================== Internal libs =====================
 import ETLHtml from "../../utils/etl/html.js";
-import { errorResponse, successResponse } from "../../utils/helper.util.js";
+import {
+  countTokens,
+  errorResponse,
+  successResponse,
+} from "../../utils/helper.util.js";
 import {
   customFormatMarkdownDocAsString,
   splitMarkdownByHeaders,
@@ -71,6 +75,8 @@ export async function askAi(req: Request, res: Response) {
     // STEP 3: [x] ============== Chat AI ===============
     console.log("Chat AI...");
     const context = customFormatMarkdownDocAsString(rerankResult);
+    const tokens = countTokens(context);
+    console.log(`\n=======\nTokens usage: ${tokens}\n=======\n`);
     const input = `Text:${context}\n\n\nI need ${task} from the above data".\n IMPORTANT!! return the answer with json format \n eg. \`\`\`json\n JSON_HERE \`\`\` `;
 
     const chatModel = new ChatOpenAI({

@@ -9,7 +9,7 @@ import BlockResourcesPlugin from "puppeteer-extra-plugin-block-resources";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { ObjectAny } from "../interfaces/general.i.js";
 import { NextFunction, Request, Response } from "express";
-
+import { encodingForModel, TiktokenModel } from "js-tiktoken";
 // ================== Req/Res Helper ===================
 function errorResponse<T>(
   res: Response,
@@ -174,6 +174,13 @@ export async function configurePage(page: Page, event: ObjectAny) {
   if (event.http_headers && Object.keys(event.http_headers).length) {
     await page.setExtraHTTPHeaders(event.http_headers);
   }
+}
+
+// ===================== Open AI Helper =====================
+export function countTokens(text: string, model: TiktokenModel = "gpt-4o") {
+  const encoding = encodingForModel(model);
+  const tokens = encoding.encode(text);
+  return tokens.length;
 }
 
 export { errorResponse, successResponse, validate };
