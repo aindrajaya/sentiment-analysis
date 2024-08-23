@@ -98,7 +98,12 @@ export async function askAi(req: Request, res: Response) {
         200,
       );
     }
-    return errorResponse(res, "Internal server error", "Error parsing output");
+    return errorResponse(
+      res,
+      "Internal server error",
+      "Error parsing output",
+      500,
+    );
   } catch (error: any) {
     return errorResponse(res, "Internal server error", error?.message, 500);
   }
