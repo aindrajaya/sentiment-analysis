@@ -82,6 +82,10 @@ export async function askAi(req: Request, res: Response) {
     const chatModel = new ChatOpenAI({
       model: "gpt-4o",
       temperature: 0,
+    }).bind({
+        response_format: {
+            type: "json_object",
+        },
     });
     const result = await chatModel.invoke(input);
     console.log("\nAnswer:\n", result.content);
