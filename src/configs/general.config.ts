@@ -10,7 +10,9 @@ const xClientId = process.env.X_CLIENTID;
 const xClientSecret = process.env.X_CLIENTSECRET;
 const mongoUri = process.env.MONGO_URI;
 const xCallbackUrl = process.env.APP_URL + "/integration/x/oauth2-callback";
+const platformApiUrl = process.env.PLATFORM_API_URL;
 export {
+  platformApiUrl,
   apiKey,
   port,
   xKey,
