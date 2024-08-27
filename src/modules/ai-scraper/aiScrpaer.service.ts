@@ -86,9 +86,9 @@ export async function askAi(req: Request, res: Response) {
       model: "gpt-4o",
       temperature: 0,
     }).bind({
-        response_format: {
-            type: "json_object",
-        },
+      response_format: {
+        type: "json_object",
+      },
     });
     const result = await chatModel.invoke(input);
     console.log("\nAnswer:\n", result.content);
@@ -103,11 +103,11 @@ export async function askAi(req: Request, res: Response) {
       return successResponse(
         res,
         "AI Scraper completed successfully",
-        { 
-            json: output,
-            task,
-            inputTokens,
-            outputTokens 
+        {
+          json: output,
+          task,
+          inputTokens,
+          outputTokens,
         },
         200,
       );
@@ -119,6 +119,7 @@ export async function askAi(req: Request, res: Response) {
       500,
     );
   } catch (error: any) {
+    console.error("Error", error);
     return errorResponse(res, "Internal server error", error?.message, 500);
   }
 }
