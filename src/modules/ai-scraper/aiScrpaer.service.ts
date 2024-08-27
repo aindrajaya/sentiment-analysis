@@ -78,13 +78,17 @@ export async function askAi(req: Request, res: Response) {
     // STEP 3: [x] ============== Chat AI ===============
     console.log("Chat AI...");
     const context = customFormatMarkdownDocAsString(rerankResult);
-    const tokens = countTokens(context);
-    console.log(`\n=======\nTokens usage: ${tokens}\n=======\n`);
-    const input = `Text:${context}\n\n\nI need ${task} from the above data".\n IMPORTANT!! return the answer with json format \n eg. \`\`\`json\n JSON_HERE \`\`\` `;
+    const input = `Text:${context}\n\n\nI need ${task} from the above data".\n IMPORTANT!! return the answer with json format \n eg. \`\`\`json\n JSON_HERE \`\`\` and limit the use of token output to no more than 4000 tokens`;
+    const inputTokens = countTokens(context + input);
+    console.log(`\n=======\nInput token usage: ${inputTokens}\n=======\n`);
 
     const chatModel = new ChatOpenAI({
       model: "gpt-4o",
       temperature: 0,
+    }).bind({
+        response_format: {
+            type: "json_object",
+        },
     });
     const result = await chatModel.invoke(input);
     console.log("\nAnswer:\n", result.content);
@@ -92,12 +96,19 @@ export async function askAi(req: Request, res: Response) {
     // STEP 4: [x] ============== Output Parser ===============
     console.log("Parsing into JSON format...");
     const output = jsonParser(result.content.toString());
+    const outputTokens = countTokens(result.content.toString());
+    console.log(`\n=======\nOutput tokens usage: ${outputTokens}\n=======\n`);
     console.log("Output", output);
     if (output) {
       return successResponse(
         res,
         "AI Scraper completed successfully",
-        { json: output, task },
+        { 
+            json: output,
+            task,
+            inputTokens,
+            outputTokens 
+        },
         200,
       );
     }
