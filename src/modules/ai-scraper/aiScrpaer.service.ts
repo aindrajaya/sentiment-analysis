@@ -66,8 +66,11 @@ export async function askAi(req: Request, res: Response) {
       apiKey: process.env.COHERE_API_KEY, // Default
       model: "rerank-multilingual-v2.0",
     });
+    // TODO: When the feature is ready to launch, we need to:
+    //  1. Change the rerank model and provider to a free model and provider.
+    //  2. Create a custom algorithm to handle the limitation.
     const rerankedDocuments = await cohereRerank.rerank(results, task, {
-      topN: 20, // TODO: need to create an algorithm to handle this limitation as well as possible
+      topN: 20,
     });
     const rerankResult = rerankedDocuments.map((r) => docs[r.index]);
     console.log("Rerank", rerankResult);
@@ -75,17 +78,17 @@ export async function askAi(req: Request, res: Response) {
     // STEP 3: [x] ============== Chat AI ===============
     console.log("Chat AI...");
     const context = customFormatMarkdownDocAsString(rerankResult);
-    const input = `Text:${context}\n\n\nI need ${task} from the above data".\n IMPORTANT!! return the answer with json format \n eg. \`\`\`json\n JSON_HERE \`\`\` and limit the use of token output to no more than 4000 tokens`;
+    const input = `Text:${context}\n\n\nI need ${task} from the above data".\n IMPORTANT!! return the answer with json format \n eg. \`\`\`json\n JSON_HERE \`\`\` and limit the use of token output to no more than 16000 tokens`;
     const inputTokens = countTokens(context + input);
     console.log(`\n=======\nInput token usage: ${inputTokens}\n=======\n`);
 
     const chatModel = new ChatOpenAI({
-      model: "gpt-4o",
+      model: "gpt-4o-mini",
       temperature: 0,
     }).bind({
-        response_format: {
-            type: "json_object",
-        },
+      response_format: {
+        type: "json_object",
+      },
     });
     const result = await chatModel.invoke(input);
     console.log("\nAnswer:\n", result.content);
@@ -100,17 +103,23 @@ export async function askAi(req: Request, res: Response) {
       return successResponse(
         res,
         "AI Scraper completed successfully",
-        { 
-            json: output,
-            task,
-            inputTokens,
-            outputTokens 
+        {
+          json: output,
+          task,
+          inputTokens,
+          outputTokens,
         },
         200,
       );
     }
-    return errorResponse(res, "Internal server error", "Error parsing output");
+    return errorResponse(
+      res,
+      "Internal server error",
+      "Error parsing output",
+      500,
+    );
   } catch (error: any) {
+    console.error("Error", error);
     return errorResponse(res, "Internal server error", error?.message, 500);
   }
 }
