@@ -29,11 +29,13 @@ async function validateToken(token: string) {
 
 const apiKey = async (req: Request, res: Response, next: NextFunction) => {
   const apiKey = req.headers["x-api-key"] as string;
-  const validation = await validateToken(apiKey);
-  if (validation) {
+  if (apiKey === config.apiKey) {
     return next();
-  } else if (apiKey === config.apiKey) {
-    return next();
+  } else {
+    const validation = await validateToken(apiKey);
+    if (validation) {
+      return next();
+    }
   }
   return errorResponse(res, "Invalid API Key", null, 401);
 };
