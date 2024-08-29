@@ -79,7 +79,7 @@ export async function askAi(req: Request, res: Response) {
     console.log("Chat AI...");
     const context = customFormatMarkdownDocAsString(rerankResult);
     const input = `Text:${context}\n\n\nI need ${task} from the above data".\n IMPORTANT!! return the answer with json format \n eg. \`\`\`json\n JSON_HERE \`\`\` and limit the use of token output to no more than 16000 tokens`;
-    const inputTokens = countTokens(context + input);
+    const inputTokens = countTokens(input);
     console.log(`\n=======\nInput token usage: ${inputTokens}\n=======\n`);
 
     const chatModel = new ChatOpenAI({

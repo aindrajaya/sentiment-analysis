@@ -177,7 +177,7 @@ export async function configurePage(page: Page, event: ObjectAny) {
 }
 
 // ===================== Open AI Helper =====================
-export function countTokens(text: string, model: TiktokenModel = "gpt-4o") {
+export function countTokens(text: string, model: TiktokenModel = "gpt-4o-mini") {
   const encoding = encodingForModel(model);
   const tokens = encoding.encode(text);
   return tokens.length;
