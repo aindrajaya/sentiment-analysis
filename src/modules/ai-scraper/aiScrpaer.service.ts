@@ -123,3 +123,66 @@ export async function askAi(req: Request, res: Response) {
     return errorResponse(res, "Internal server error", error?.message, 500);
   }
 }
+
+// HACK: Ask AI V2 is an improved version of the Ask AI function to make the result more accurate and improve user experience with the conversation.
+// NOTE: PIPELINE: ETL process -> vectorization -> similiarity search -> reranking -> agent
+// TODO: create an agent to handle the conversation with the user and stream the process.
+// AGENT Type: ReAct (Reasoning and Action)
+// AGENT PIPELINE: QUERY -> Thought -> Action -> Action Input -> Observation -> Repeat if needed -> Final Answer
+// AGENT Description:
+// the agent is responsible for handling the conversation with the user search/read/write memory, thought process, and decision making, agent will have some tools can use to give best answer for user.
+// AGENT Tools:
+// 1. Manage memory search/read/write memory data.
+// 2. Summerize the conversation with the user.
+// 3. Combinator for combine new similiar document with previous documents used in the conversation.
+// 4. Search related documents with user query. (eg. in previous conversation ai answered a question about a specific topic, the user can ask the ai to provide more information about the topic)
+
+/** HACK: SOME DATA SCHEMA DETAILS:
+    AI Answer Schema
+    - descritption: "the answer"
+    - result: "```json JSON_RESULT ```"
+    Memory schema
+    - userId: the user id
+    - sessionId: unique id for the user session
+    - chatHistory: chat history for the user session
+    - - chatHistory schema
+    - - - id: unique id for the chat message
+    - - - query: the message sent by the user
+    - - - aiAnswer: the answer from the ai {descritption: "the answer",result: "```json JSON_RESULT ```"}
+    - - - documentUsed: the documents from chunk of pageContent used in the conversation
+    - aiFinalAnswer: ai answer that has confirmed by the user in json string format {descritption: "the answer",result: "```json JSON_RESULT ```"}
+    - pageContent: the documents used in the conversation
+    - documents: chunk of pageContent
+**/
+
+/** HACK: Manage Memory Tool DETAILS:
+ *   Ref: https://js.langchain.com/v0.1/docs/integrations/chat_memory/mongodb/
+ *   PARAMS: userId, sessionId
+ *   Functions:
+ *   1. getMemory: get the memory for the user session if exists, if not exists create a new memory.
+ *   2. saveMemory: save the memory for the user session.
+ *   3. searchMemory: search top N chat history that related to the user query.
+ **/
+
+/** HACK: Search Tool DETAILS:
+ *    Ref: previous approuch
+ *   PARAMS: q, documents
+ *   Functions:
+ *   1. similiarySearch:  search top N similiar documents for the user query.
+ *   2. rerank: rerank the search results for better results.
+ **/
+
+/** HACK: Combinator Tool DETAILS:
+ *   Ref: https://js.langchain.com/v0.1/docs/modules/data_connection/document_loaders/custom/
+ *   PARAMS: documents, newDocument
+ *   Functions:
+ *   1. combine: combine newDocument with documents and return the combined documents.
+ *   2. combineAndSplit: combine newDocument with documents and split the combined documents into chunks.
+ **/
+
+// NOTE: the agent will stream the progress and the final answer to the user.
+// FOR Streaming reference: https://js.langchain.com/v0.1/docs/modules/agents/how_to/streaming/
+export async function askAiV2(req: Request, res: Response) {
+  try {
+  } catch (error: any) {}
+}
