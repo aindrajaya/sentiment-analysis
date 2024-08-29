@@ -183,4 +183,13 @@ export function countTokens(text: string, model: TiktokenModel = "gpt-4o-mini") 
   return tokens.length;
 }
 
+export function limitTokens(text: string, tokensLimit: number, model: TiktokenModel = "gpt-4o-mini") {
+  const encoding = encodingForModel(model);
+  const tokens = encoding
+    .encode(text)
+    .slice(0, tokensLimit);
+
+  return encoding.decode(tokens);
+}
+
 export { errorResponse, successResponse, validate };

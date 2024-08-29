@@ -13,6 +13,7 @@ import ETLHtml from "../../utils/etl/html.js";
 import {
   countTokens,
   errorResponse,
+  limitTokens,
   successResponse,
 } from "../../utils/helper.util.js";
 import {
@@ -20,7 +21,7 @@ import {
   splitMarkdownByHeaders,
 } from "../../utils/etl/markdown.js";
 import jsonParser from "../../utils/etl/jsonParser.js";
-import { AiScraperBodyRequest } from "./types/interface.js";
+import { AiIdentifierBodyRequest, AiScraperBodyRequest } from "./types/interface.js";
 
 // NOTE: PIPELINE: ETL process -> vectorization -> similiarity search -> reranking -> chat ai -> output parser
 export async function askAi(req: Request, res: Response) {
@@ -28,7 +29,7 @@ export async function askAi(req: Request, res: Response) {
     const { markdown, task } = req.body as AiScraperBodyRequest;
     // // STEP 1  [x]: ============== ETL Process===============
     // console.log("Starting ETL Process...");
-    //
+    //.
     // // [x] Extract the HTML from the target URL
     // const etl = new ETLHtml();
     // const html = await etl.getHtml(target_url);
@@ -106,6 +107,47 @@ export async function askAi(req: Request, res: Response) {
         {
           json: output,
           task,
+          inputTokens,
+          outputTokens,
+        },
+        200,
+      );
+    }
+    return errorResponse(
+      res,
+      "Internal server error",
+      "Error parsing output",
+      500,
+    );
+  } catch (error: any) {
+    console.error("Error", error);
+    return errorResponse(res, "Internal server error", error?.message, 500);
+  }
+}
+
+export async function identifyContent(req: Request, res: Response) {
+  try {
+    const { markdown } = req.body as AiIdentifierBodyRequest;
+    const context = limitTokens(markdown, 125_000);
+    const input = `Text:${context}\n\n\nIdentify the above data`;
+    const inputTokens = countTokens(input);
+    console.log(`\n=======\nInput token usage: ${inputTokens}\n=======\n`);
+
+    const chatModel = new ChatOpenAI({
+      model: "gpt-4o-mini",
+      temperature: 0,
+    });
+    const result = await chatModel.invoke(input);
+    console.log("\nAnswer:\n", result.content);
+    const output = result.content.toString();
+    const outputTokens = countTokens(output);
+    console.log(`\n=======\nOutput tokens usage: ${outputTokens}\n=======\n`);
+    if (output) {
+      return successResponse(
+        res,
+        "AI Scraper completed successfully",
+        {
+          content: output,
           inputTokens,
           outputTokens,
         },
