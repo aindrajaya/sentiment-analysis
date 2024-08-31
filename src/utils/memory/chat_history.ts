@@ -59,7 +59,7 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
   collection: Collection<ChatDocument>; // Adjust this type according to your MongoDB collection type
   sessionId: ObjectId;
   userId: string;
-  idKey: string = "sessionId";
+  idKey: string = "_id";
 
   constructor({ sessionId, userId }: MongoDBChatMessageHistoryProps) {
     super();
@@ -108,6 +108,17 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
     return session.insertedId.toString();
   }
 
+  async getPageContent() {
+    const document = await this.collection.findOne({
+      userId: this.userId,
+      [this.idKey]: this.sessionId,
+    });
+    const pageContent =
+      document?.pageContent ||
+      "Something went wrong while fetching the page content, please try to scrape again.";
+    return pageContent;
+  }
+
   async getMetadata() {
     const document = await this.collection.findOne({
       userId: this.userId,
@@ -117,6 +128,7 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
   }
 
   async getMessages() {
+    console.log("MASUK SINI");
     const document = await this.collection.findOne({
       userId: this.userId,
       [this.idKey]: this.sessionId,
