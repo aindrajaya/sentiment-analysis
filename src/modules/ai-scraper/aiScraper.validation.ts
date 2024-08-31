@@ -12,18 +12,33 @@ const AiScraperSchema = z.object({
   }),
 });
 
+const AiScraperSchemaV2 = z.object({
+  body: z.object({
+    sessionId: z.string({
+      required_error: "Session ID is required",
+    }),
+    userId: z.string({
+      required_error: "User ID is required",
+    }),
+    task: z.string({
+      required_error: "What data you need to scrape bro?",
+    }),
+  }),
+});
+
 const AiIdentifierSchema = z.object({
   body: z.object({
     markdown: z.string({
       required_error: "Markdown is required",
     }),
+    userId: z.string({
+      required_error: "User ID is required",
+    }),
   }),
 });
 
 const aiScraperValidation = validate(AiScraperSchema);
+const aiScraperV2Validation = validate(AiScraperSchemaV2);
 const aiIdentifierValidation = validate(AiIdentifierSchema);
 
-export { 
-  aiScraperValidation,
-  aiIdentifierValidation,
-};
+export { aiScraperValidation, aiIdentifierValidation, aiScraperV2Validation };
