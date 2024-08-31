@@ -1,7 +1,7 @@
 // ============ Other libs =================
 import "dotenv/config";
 import { Request, Response } from "express";
-
+import { z } from "zod";
 // ================= Langhchain libs ====================
 import { CohereRerank } from "@langchain/cohere";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
@@ -11,17 +11,15 @@ import {
   RunnableConfig,
   RunnableWithMessageHistory,
 } from "@langchain/core/runnables";
-import { createReactAgent } from "../../utils/langchain/agent/createReactAgent.js";
 import { AgentExecutor, createOpenAIToolsAgent } from "langchain/agents";
-import { PromptTemplate } from "@langchain/core/prompts";
 import {
-  ChatDocument,
-  MongoDBChatMessageHistory,
-} from "../../utils/memory/chat_history.js";
-import { ChatPromptTemplate } from "@langchain/core/prompts";
+  ChatPromptTemplate,
+  MessagesPlaceholder,
+} from "@langchain/core/prompts";
 import { pull } from "langchain/hub";
 import { StringOutputParser } from "@langchain/core/output_parsers";
 // ================== Internal libs =====================
+import { MongoDBChatMessageHistory } from "../../utils/memory/chat_history.js";
 import ETLHtml from "../../utils/etl/html.js";
 import {
   countTokens,
@@ -34,18 +32,15 @@ import {
   splitMarkdownByHeaders,
 } from "../../utils/etl/markdown.js";
 import jsonParser from "../../utils/etl/jsonParser.js";
-import {
-  ExampleTool,
-  ExampleTool2,
-} from "../../utils/langchain/tools/example.js";
-import { Collection } from "mongodb";
+
 import {
   AiIdentifierBodyRequest,
   AiScraperBodyRequest,
   AiScraperV2BodyRequest,
 } from "./types/interface.js";
-import { db } from "../../configs/databases/mongodb.db.js";
-import { marked } from "marked";
+import { SearchWebContentTool } from "../../utils/langchain/tools/searchWebContent.js";
+import { createReActAgent } from "../../utils/langchain/agent/createReActAgent.js";
+import { ChainWithMessageHistory } from "../../utils/langchain/chain/exampleWithHistory.js";
 
 // NOTE: PIPELINE: ETL process -> vectorization -> similiarity search -> reranking -> chat ai -> output parser
 export async function askAi(req: Request, res: Response) {
@@ -225,32 +220,58 @@ export async function askAiV2(req: Request, res: Response) {
   try {
     const { task, userId, sessionId } = req.body as AiScraperV2BodyRequest;
     // Instantiate your model and prompt.
+    const memory = new MongoDBChatMessageHistory({ userId, sessionId });
+    const markdown = await memory.getPageContent();
+    const splitMarkdown = splitMarkdownByHeaders(markdown, [
+      ["#", "Super Title"],
+      ["##", "Title"],
+      ["###", "Sub Title"],
+    ]);
+    const splitter = new RecursiveCharacterTextSplitter({
+      chunkSize: 2000,
+      chunkOverlap: 200,
+    });
+    const docs = await splitter.splitDocuments(splitMarkdown);
+    console.log("Split Markdown", docs);
+
     const model = new ChatOpenAI({
       model: "gpt-4o-mini",
       temperature: 0,
     });
-    const prompt = await pull<ChatPromptTemplate>(
-      "hwchase17/openai-tools-agent",
-    );
-    const tools = [new ExampleTool(), new ExampleTool2()];
+    const prompt = ChatPromptTemplate.fromMessages([
+      [
+        "system",
+        "You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape from available web content, you can use available tools that will help you to answer",
+      ],
+      new MessagesPlaceholder("chat_history"),
+      ["user", "{input}"],
+      new MessagesPlaceholder("agent_scratchpad"),
+    ]);
+    const tools = [new SearchWebContentTool(docs)];
 
-    const agent = await createOpenAIToolsAgent({
-      llm: model,
+    const finalResponseSchema = z.object({
+      desc: z.string().describe("The description of scraped data"),
+      json: z
+        .string()
+        .describe(
+          "the json format of scraped data, !IMPORTANT should in json markdown format like ```json RESULT_HERE ```",
+        ),
+    });
+    const agent = await createReActAgent({
+      model,
       tools,
       prompt,
+      finalResponseSchema,
     });
+    // const agent = await createOpenAIToolsAgent({ llm: model, tools, prompt });
     const runnable = new AgentExecutor({
       agent,
       tools,
       verbose: true,
     });
-    const withHistory = new RunnableWithMessageHistory({
+    const withHistory = new ChainWithMessageHistory({
       runnable,
-      getMessageHistory: ({ id, userId }) =>
-        new MongoDBChatMessageHistory({
-          sessionId: id,
-          userId,
-        }),
+      getMessageHistory: (_sessionId) => memory,
       inputMessagesKey: "input",
       // This shows the runnable where to insert the history.
       // We set to "history" here because of our PromptTemplate above.
@@ -271,6 +292,14 @@ export async function askAiV2(req: Request, res: Response) {
       config,
     );
     console.log("Output", output);
+    if (output) {
+      return successResponse(
+        res,
+        "AI Scraper completed successfully",
+        output,
+        200,
+      );
+    }
     return errorResponse(
       res,
       "Internal server error",
