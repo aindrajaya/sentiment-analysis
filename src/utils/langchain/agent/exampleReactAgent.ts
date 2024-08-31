@@ -83,7 +83,7 @@ export type CreateReactAgentParams = {
  * ```
  */
 
-export async function createReactAgent({
+export async function exampleReactAgent({
   model,
   tools,
   prompt,
