@@ -5,11 +5,11 @@ import {
   mapChatMessagesToStoredMessages,
   mapStoredMessagesToChatMessages,
 } from "@langchain/core/messages";
-import { Collection, Document, PushOperator } from "mongodb";
+import { Collection, Document, ObjectId, PushOperator } from "mongodb";
 import { Document as ChainDoc } from "@langchain/core/documents";
+import { db } from "../../configs/databases/mongodb.db.js";
 interface MongoDBChatMessageHistoryProps {
-  collection: Collection<ChatDocument>; // Adjust this type according to your MongoDB collection type
-  sessionId: string;
+  sessionId?: string;
   userId: string;
 }
 
@@ -47,7 +47,6 @@ interface MongoDBChatMessageHistoryProps {
 
 export interface ChatDocument extends Document {
   userId: string;
-  sessionId: string;
   messages: StoredMessage[];
   pageContent: string;
   finalAnswer?: string;
@@ -58,18 +57,18 @@ export interface ChatDocument extends Document {
 export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
   lc_namespace: string[] = ["langchain", "stores", "message", "mongodb"];
   collection: Collection<ChatDocument>; // Adjust this type according to your MongoDB collection type
-  sessionId: string;
+  sessionId: ObjectId;
   userId: string;
   idKey: string = "sessionId";
 
-  constructor({
-    collection,
-    sessionId,
-    userId,
-  }: MongoDBChatMessageHistoryProps) {
+  constructor({ sessionId, userId }: MongoDBChatMessageHistoryProps) {
     super();
-    this.collection = collection;
-    this.sessionId = sessionId;
+    this.collection = db!.collection("memory") as Collection<ChatDocument>;
+    if (!sessionId) {
+      this.sessionId = new ObjectId();
+    } else {
+      this.sessionId = new ObjectId(sessionId);
+    }
     console.log("sessionId", sessionId);
     this.userId = userId;
     console.log("userId", userId);
@@ -95,17 +94,18 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
   }
 
   // NOTE: still in consideration for the implementation
-  searchSimilarMessages(messages: StoredMessage[], message: StoredMessage) {}
+  searchSimilarMessages(messages: StoredMessage[], query: string) {}
 
   async createSession(content: string) {
-    await this.collection.insertOne({
-      sessionId: this.sessionId,
+    console.log("create session", this.collection);
+    const session = await this.collection.insertOne({
       userId: this.userId,
       messages: [],
       inputToken: 0,
       outputToken: 0,
       pageContent: content,
     });
+    return session.insertedId.toString();
   }
 
   async getMetadata() {
