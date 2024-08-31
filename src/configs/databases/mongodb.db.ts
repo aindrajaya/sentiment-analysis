@@ -1,20 +1,26 @@
 import "dotenv/config";
-import { MongoClient } from "mongodb";
+import { Db, MongoClient } from "mongodb";
 
 export const config = {
   url: process.env.MONGODB_URI,
-  db: process.env.MONGODB_DATABASE,
+  dbName: process.env.MONGODB_DATABASE,
 };
 
-export default async function connectToMongo() {
+let db: Db | null = null;
+
+export async function connectToMongo(): Promise<void> {
+  if (db) {
+    return; // Already connected
+  }
   try {
     const client = new MongoClient(config.url || "");
     await client.connect();
-    return client.db(config.db);
+    db = client.db(config.dbName);
+    console.log("Connected to MongoDB");
   } catch (error) {
-    console.error(error, "\n\n Your Configuration: ", { ...config });
-    throw new Error(
-      "Could not connect to MongoDB, please check your connection.",
-    );
+    console.error("Error connecting to MongoDB:", error);
+    throw new Error("Could not connect to MongoDB");
   }
 }
+
+export { db }; // Export the `db` variable directly
