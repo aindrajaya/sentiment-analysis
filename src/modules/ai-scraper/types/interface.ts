@@ -5,6 +5,13 @@ export interface AiScraperBodyRequest {
 
 export interface AiIdentifierBodyRequest {
   markdown: string;
+  userId: string;
+}
+
+export interface AiScraperV2BodyRequest {
+  task: string;
+  sessionId: string;
+  userId: string;
 }
 
 export interface AiScraperBodyResponse {
