@@ -7,7 +7,19 @@ import { CohereRerank } from "@langchain/cohere";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
 import { FaissStore } from "@langchain/community/vectorstores/faiss";
-
+import {
+  RunnableConfig,
+  RunnableWithMessageHistory,
+} from "@langchain/core/runnables";
+import { createReactAgent } from "../../utils/langchain/agent/createReactAgent.js";
+import { AgentExecutor, createOpenAIToolsAgent } from "langchain/agents";
+import { PromptTemplate } from "@langchain/core/prompts";
+import {
+  ChatDocument,
+  MongoDBChatMessageHistory,
+} from "../../utils/memory/chat_history.js";
+import type { ChatPromptTemplate } from "@langchain/core/prompts";
+import { pull } from "langchain/hub";
 // ================== Internal libs =====================
 import ETLHtml from "../../utils/etl/html.js";
 import {
@@ -21,6 +33,12 @@ import {
 } from "../../utils/etl/markdown.js";
 import jsonParser from "../../utils/etl/jsonParser.js";
 import { AiScraperBodyRequest } from "./types/interface.js";
+import {
+  ExampleTool,
+  ExampleTool2,
+} from "../../utils/langchain/tools/example.js";
+import connectToMongo from "../../configs/databases/mongodb.db.js";
+import { Collection } from "mongodb";
 
 // NOTE: PIPELINE: ETL process -> vectorization -> similiarity search -> reranking -> chat ai -> output parser
 export async function askAi(req: Request, res: Response) {
@@ -136,7 +154,17 @@ export async function askAi(req: Request, res: Response) {
 // 2. Summerize the conversation with the user.
 // 3. Combinator for combine new similiar document with previous documents used in the conversation.
 // 4. Search related documents with user query. (eg. in previous conversation ai answered a question about a specific topic, the user can ask the ai to provide more information about the topic)
-
+//
+//
+// PIPELINE Starting Conversation +  Indetification + Starting conversation: lambda (loading...) -> scraper -> create session -> {userId, markdown, sessionId} mrscrper -> chat open ai -> indentifcation
+// PIPELINE Conversation (Stream): mrscraper {task, userId, sessionId} <-> agent
+//
+// {desc: "a"}
+// {desc: "a is"}
+// {desc: "a is for", result: '```json {a: } ```'}
+// {desc: "a is for anj", result '```json {a: anj } ```}
+//
+//
 /** HACK: SOME DATA SCHEMA DETAILS:
     AI Answer Schema
     - descritption: "the answer"
@@ -150,9 +178,13 @@ export async function askAi(req: Request, res: Response) {
     - - - query: the message sent by the user
     - - - aiAnswer: the answer from the ai {descritption: "the answer",result: "```json JSON_RESULT ```"}
     - - - documentUsed: the documents from chunk of pageContent used in the conversation
+    - - - oToken: 
+    - - - iToken:
     - aiFinalAnswer: ai answer that has confirmed by the user in json string format {descritption: "the answer",result: "```json JSON_RESULT ```"}
     - pageContent: the documents used in the conversation
     - documents: chunk of pageContent
+    - totalInputToken: total token used in the conversation
+    - totalOutputToken: total token used in the conversation
 **/
 
 /** HACK: Manage Memory Tool DETAILS:
@@ -184,5 +216,64 @@ export async function askAi(req: Request, res: Response) {
 // FOR Streaming reference: https://js.langchain.com/v0.1/docs/modules/agents/how_to/streaming/
 export async function askAiV2(req: Request, res: Response) {
   try {
-  } catch (error: any) {}
+    // Instantiate your model and prompt.
+    const model = new ChatOpenAI({
+      model: "gpt-4o-mini",
+      temperature: 0,
+    });
+    const prompt = await pull<ChatPromptTemplate>(
+      "hwchase17/openai-tools-agent",
+    );
+    const tools = [new ExampleTool(), new ExampleTool2()];
+
+    const agent = await createOpenAIToolsAgent({
+      llm: model,
+      tools,
+      prompt,
+    });
+    const runnable = new AgentExecutor({
+      agent,
+      tools,
+      verbose: true,
+    });
+    const db = await connectToMongo();
+    const collection = db.collection("memory") as Collection<ChatDocument>;
+    const withHistory = new RunnableWithMessageHistory({
+      runnable,
+      getMessageHistory: ({ id, userId }) =>
+        new MongoDBChatMessageHistory({
+          sessionId: id,
+          userId,
+          collection,
+        }),
+      inputMessagesKey: "input",
+      // This shows the runnable where to insert the history.
+      // We set to "history" here because of our PromptTemplate above.
+      historyMessagesKey: "chat_history",
+    });
+
+    // Create your `configurable` object. This is where you pass in the
+    // `sessionId` which is used to identify chat sessions in your message store.
+    const config: RunnableConfig = {
+      configurable: { sessionId: { id: 1, userId: 1 } },
+    };
+
+    console.log("config", config);
+    let output = await withHistory.invoke(
+      {
+        input: "",
+      },
+      config,
+    );
+    console.log("Output", output);
+    return errorResponse(
+      res,
+      "Internal server error",
+      "Error parsing output",
+      500,
+    );
+  } catch (error: any) {
+    console.error("Error", error);
+    return errorResponse(res, "Internal server error", error?.message, 500);
+  }
 }
