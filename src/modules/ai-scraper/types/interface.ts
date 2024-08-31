@@ -3,18 +3,15 @@ export interface AiScraperBodyRequest {
   task: string;
 }
 
-export interface AiScraperV2BodyRequest {
+export interface AiIdentifierBodyRequest {
   markdown: string;
-  task: string;
-  sessionId: string;
-}
-
-export interface AiScraperBodyResponse {
-  desc: string;
-  result: string;
 }
 
 export interface AiScraperBodyResponse {
   task: string;
   json: string;
+}
+
+export interface AiIdentifierBodyResponse {
+  content: string;
 }
