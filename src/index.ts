@@ -21,7 +21,7 @@ app.get("/", (req: Request, res: Response) => {
   res.send("MR Scraper Sentiment Analysis API");
 });
 app.use("/detect-sentiment", apiKey, sentimentRouter);
-app.use("/ai-scraper/v1", apiKey, aiScraperRouter);
+app.use("/ai-scraper", apiKey, aiScraperRouter);
 
 /* Error handler */
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
