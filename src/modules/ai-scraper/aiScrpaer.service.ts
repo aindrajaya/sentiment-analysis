@@ -18,8 +18,9 @@ import {
   ChatDocument,
   MongoDBChatMessageHistory,
 } from "../../utils/memory/chat_history.js";
-import type { ChatPromptTemplate } from "@langchain/core/prompts";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { pull } from "langchain/hub";
+import { StringOutputParser } from "@langchain/core/output_parsers";
 // ================== Internal libs =====================
 import ETLHtml from "../../utils/etl/html.js";
 import {
@@ -33,14 +34,18 @@ import {
   splitMarkdownByHeaders,
 } from "../../utils/etl/markdown.js";
 import jsonParser from "../../utils/etl/jsonParser.js";
-import { AiScraperBodyRequest } from "./types/interface.js";
 import {
   ExampleTool,
   ExampleTool2,
 } from "../../utils/langchain/tools/example.js";
-import connectToMongo from "../../configs/databases/mongodb.db.js";
 import { Collection } from "mongodb";
-import { AiIdentifierBodyRequest, AiScraperBodyRequest } from "./types/interface.js";
+import {
+  AiIdentifierBodyRequest,
+  AiScraperBodyRequest,
+  AiScraperV2BodyRequest,
+} from "./types/interface.js";
+import { db } from "../../configs/databases/mongodb.db.js";
+import { marked } from "marked";
 
 // NOTE: PIPELINE: ETL process -> vectorization -> similiarity search -> reranking -> chat ai -> output parser
 export async function askAi(req: Request, res: Response) {
@@ -218,6 +223,7 @@ export async function askAi(req: Request, res: Response) {
 // FOR Streaming reference: https://js.langchain.com/v0.1/docs/modules/agents/how_to/streaming/
 export async function askAiV2(req: Request, res: Response) {
   try {
+    const { task, userId, sessionId } = req.body as AiScraperV2BodyRequest;
     // Instantiate your model and prompt.
     const model = new ChatOpenAI({
       model: "gpt-4o-mini",
@@ -238,15 +244,12 @@ export async function askAiV2(req: Request, res: Response) {
       tools,
       verbose: true,
     });
-    const db = await connectToMongo();
-    const collection = db.collection("memory") as Collection<ChatDocument>;
     const withHistory = new RunnableWithMessageHistory({
       runnable,
       getMessageHistory: ({ id, userId }) =>
         new MongoDBChatMessageHistory({
           sessionId: id,
           userId,
-          collection,
         }),
       inputMessagesKey: "input",
       // This shows the runnable where to insert the history.
@@ -257,22 +260,41 @@ export async function askAiV2(req: Request, res: Response) {
     // Create your `configurable` object. This is where you pass in the
     // `sessionId` which is used to identify chat sessions in your message store.
     const config: RunnableConfig = {
-      configurable: { sessionId: { id: 1, userId: 1 } },
+      configurable: { sessionId: { id: sessionId, userId } },
     };
 
     console.log("config", config);
     let output = await withHistory.invoke(
       {
-        input: "",
+        input: task,
       },
       config,
     );
     console.log("Output", output);
+    return errorResponse(
+      res,
+      "Internal server error",
+      "Error parsing output",
+      500,
+    );
+  } catch (error: any) {
+    console.error("Error", error);
+    return errorResponse(res, "Internal server error", error?.message, 500);
+  }
+}
+
 export async function identifyContent(req: Request, res: Response) {
   try {
-    const { markdown } = req.body as AiIdentifierBodyRequest;
+    const { markdown, userId } = req.body as AiIdentifierBodyRequest;
     const context = limitTokens(markdown, 125_000);
-    const input = `Text:${context}\n\n\nIdentify the above data`;
+    const prompt = ChatPromptTemplate.fromMessages([
+      [
+        "system",
+        "You are an AI Scraper assistance build by MR Scraper, your task is to tell user what data can be scraped from the web content given, please provide trully information what data can bet scraped without any additional information that is no included in the web content user given.",
+      ],
+      ["user", "Web Content: {input}"],
+    ]);
+    const input = `Web Content:${context}`;
     const inputTokens = countTokens(input);
     console.log(`\n=======\nInput token usage: ${inputTokens}\n=======\n`);
 
@@ -280,17 +302,22 @@ export async function identifyContent(req: Request, res: Response) {
       model: "gpt-4o-mini",
       temperature: 0,
     });
-    const result = await chatModel.invoke(input);
-    console.log("\nAnswer:\n", result.content);
-    const output = result.content.toString();
+    const outputParser = new StringOutputParser();
+    const llmChain = prompt.pipe(chatModel).pipe(outputParser);
+    const result = await llmChain.invoke({ input: context });
+    console.log("\nAnswer:\n", result);
+    const output = result;
     const outputTokens = countTokens(output);
     console.log(`\n=======\nOutput tokens usage: ${outputTokens}\n=======\n`);
     if (output) {
+      const memory = new MongoDBChatMessageHistory({ userId });
+      const session = await memory.createSession(markdown);
       return successResponse(
         res,
         "AI Scraper completed successfully",
         {
           content: output,
+          sesionId: session,
           inputTokens,
           outputTokens,
         },
