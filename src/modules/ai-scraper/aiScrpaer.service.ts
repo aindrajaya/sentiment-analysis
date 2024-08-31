@@ -149,7 +149,7 @@ export async function askAi(req: Request, res: Response) {
 // {desc: "a"}
 // {desc: "a is"}
 // {desc: "a is for", result: '```json {a: } ```'}
-// {desc: "a is for anj", result '```json {a: anj } ```}
+// {desc: "a is for apple", result '```json {a: apple } ```}
 //
 //
 /** HACK: SOME DATA SCHEMA DETAILS:
