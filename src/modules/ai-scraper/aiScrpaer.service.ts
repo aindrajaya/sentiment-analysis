@@ -7,20 +7,15 @@ import { CohereRerank } from "@langchain/cohere";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
 import { FaissStore } from "@langchain/community/vectorstores/faiss";
-import {
-  RunnableConfig,
-  RunnableWithMessageHistory,
-} from "@langchain/core/runnables";
+import { RunnableConfig } from "@langchain/core/runnables";
 import { AgentExecutor, createOpenAIToolsAgent } from "langchain/agents";
 import {
   ChatPromptTemplate,
   MessagesPlaceholder,
 } from "@langchain/core/prompts";
-import { pull } from "langchain/hub";
 import { StringOutputParser } from "@langchain/core/output_parsers";
 // ================== Internal libs =====================
 import { MongoDBChatMessageHistory } from "../../utils/memory/chat_history.js";
-import ETLHtml from "../../utils/etl/html.js";
 import {
   countTokens,
   errorResponse,
@@ -40,24 +35,14 @@ import {
 } from "./types/interface.js";
 import { SearchWebContentTool } from "../../utils/langchain/tools/searchWebContent.js";
 import { createReActAgent } from "../../utils/langchain/agent/createReActAgent.js";
-import { ChainWithMessageHistory } from "../../utils/langchain/chain/exampleWithHistory.js";
+import { ChainWithMessageHistory } from "../../utils/langchain/chain/chainWithHistory.js";
 
 // NOTE: PIPELINE: ETL process -> vectorization -> similiarity search -> reranking -> chat ai -> output parser
 export async function askAi(req: Request, res: Response) {
   try {
     const { markdown, task } = req.body as AiScraperBodyRequest;
     // // STEP 1  [x]: ============== ETL Process===============
-    // console.log("Starting ETL Process...");
-    //.
-    // // [x] Extract the HTML from the target URL
-    // const etl = new ETLHtml();
-    // const html = await etl.getHtml(target_url);
-    // console.log("Html fetched");
-    //
-    // // [x] Transform the HTML to markdown
-    // const { markdownPath, markdown } = etl.process(html);
-    // console.log("HTML Tranformed to markdown", markdownPath);
-    //
+
     // [x] Load into splitted Semantic Documents
     const splitMarkdown = splitMarkdownByHeaders(markdown, [
       ["#", "Super Title"],
@@ -219,7 +204,6 @@ export async function askAi(req: Request, res: Response) {
 export async function askAiV2(req: Request, res: Response) {
   try {
     const { task, userId, sessionId } = req.body as AiScraperV2BodyRequest;
-    // Instantiate your model and prompt.
     const memory = new MongoDBChatMessageHistory({ userId, sessionId });
     const markdown = await memory.getPageContent();
     const splitMarkdown = splitMarkdownByHeaders(markdown, [
@@ -263,7 +247,6 @@ export async function askAiV2(req: Request, res: Response) {
       prompt,
       finalResponseSchema,
     });
-    // const agent = await createOpenAIToolsAgent({ llm: model, tools, prompt });
     const runnable = new AgentExecutor({
       agent,
       tools,
@@ -273,18 +256,13 @@ export async function askAiV2(req: Request, res: Response) {
       runnable,
       getMessageHistory: (_sessionId) => memory,
       inputMessagesKey: "input",
-      // This shows the runnable where to insert the history.
-      // We set to "history" here because of our PromptTemplate above.
       historyMessagesKey: "chat_history",
     });
 
-    // Create your `configurable` object. This is where you pass in the
-    // `sessionId` which is used to identify chat sessions in your message store.
     const config: RunnableConfig = {
       configurable: { sessionId: { id: sessionId, userId } },
     };
 
-    console.log("config", config);
     let output = await withHistory.invoke(
       {
         input: task,
