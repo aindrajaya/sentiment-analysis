@@ -35,6 +35,7 @@ import {
   AiIdentifierBodyRequest,
   AiScraperBodyRequest,
   AiScraperV2BodyRequest,
+  AiScraperV2BodyResponse,
 } from "./types/interface.js";
 import { SearchWebContentTool } from "../../utils/langchain/tools/searchWebContent.js";
 import { createReActAgent } from "../../utils/langchain/agent/createReActAgent.js";
@@ -204,9 +205,12 @@ export async function askAi(req: Request, res: Response) {
 
 // NOTE: the agent will stream the progress and the final answer to the user.
 // FOR Streaming reference: https://js.langchain.com/v0.1/docs/modules/agents/how_to/streaming/
-export async function askAiV2(req: Request, res: Response) {
+export async function askAiV2(
+  payload: AiScraperV2BodyRequest,
+  callback: (response: AiScraperV2BodyResponse) => void,
+) {
   try {
-    const { task, userId, sessionId } = req.body as AiScraperV2BodyRequest;
+    const { task, userId, sessionId } = payload;
     const memory = new MongoDBChatMessageHistory({ userId, sessionId });
     const markdown = await memory.getPageContent();
     const splitMarkdown = splitMarkdownByHeaders(markdown, [
@@ -232,7 +236,7 @@ export async function askAiV2(req: Request, res: Response) {
         "system",
         "You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape from available web content, you can use available tools that will help you to answer",
       ],
-      // new MessagesPlaceholder("chat_history"),
+      new MessagesPlaceholder("chat_history"),
       ["user", "{input}"],
       new MessagesPlaceholder("agent_scratchpad"),
     ]);
@@ -275,14 +279,22 @@ export async function askAiV2(req: Request, res: Response) {
     };
 
     const logStream = await withHistory.streamLog({ input: task }, config);
+    let finalState;
     let currentDesc = "";
     let currentJson = "";
     let currentStream = "";
     for await (const chunk of logStream) {
+      if (!finalState) {
+        finalState = chunk;
+      } else {
+        finalState = finalState.concat(chunk);
+      }
+      console.log("Agent Chunk:", JSON.stringify(chunk, null, 2));
       if (
         chunk.ops.length > 1 &&
         chunk.ops[1].op == "add" &&
-        chunk.ops[1].path == "/logs/ChatOpenAI:2/streamed_output/-"
+        (chunk.ops[1].path == "/logs/ChatOpenAI:2/streamed_output/-" ||
+          chunk.ops[1].path == "/logs/ChatOpenAI/streamed_output/-")
       ) {
         const addOp = chunk.ops[1];
         if (
@@ -291,7 +303,7 @@ export async function askAiV2(req: Request, res: Response) {
         ) {
           const content =
             addOp.value.message.additional_kwargs.function_call?.arguments;
-          const data: { desc: string; json: string } = {
+          const data: AiScraperV2BodyResponse = {
             desc: "",
             json: "",
           };
@@ -320,7 +332,6 @@ export async function askAiV2(req: Request, res: Response) {
                 const jsonContentMatch =
                   currentJson.match(/```json([\s\S]*?)```/);
                 if (!jsonContentMatch) {
-                  // if no json match found, then use the current json start from ```json to the end
                   const startIndex = currentJson.indexOf("```json");
                   data.json = currentJson.substring(startIndex);
                 } else {
@@ -328,20 +339,17 @@ export async function askAiV2(req: Request, res: Response) {
                 }
               }
             }
+            callback(data);
           }
         }
       }
     }
-
-    return errorResponse(
-      res,
-      "Internal server error",
-      "Error parsing output",
-      500,
-    );
   } catch (error: any) {
     console.error("Error", error);
-    return errorResponse(res, "Internal server error", error?.message, 500);
+    callback({
+      desc: "Ups, something went wrong.",
+      json: `\`\`\`json {error: "${error?.message}" } \`\`\``,
+    });
   }
 }
 
