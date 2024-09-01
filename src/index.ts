@@ -45,9 +45,12 @@ async function main() {
     res.send("MR Scraper Sentiment Analysis API");
   });
 
-  app.get("/test", (req: Request, res: Response) => {
-    res.sendFile(join(__dirname, "index.html"));
-  });
+  // use this endpoint to test the ai scraper v2 with simple client
+  // NOTE: if you want to test the ai scraper v2, you need change staticly the session id and the user id in the index.html file (scroll down to the bottom of the file to see the script tag and change the value of the sessionId and userId variables to the desired values)
+
+  // app.get("/test/ai-scraper-v2", (req: Request, res: Response) => {
+  //   res.sendFile(join(__dirname, "index.html"));
+  // });
   app.use("/detect-sentiment", apiKey, sentimentRouter);
   app.use("/ai-scraper", apiKey, aiScraperRouter);
 
