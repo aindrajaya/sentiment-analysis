@@ -147,6 +147,8 @@ export class ChainWithMessageHistory<
       return parsedOutputValue;
     } else if (isBaseMessage(parsedOutputValue)) {
       return [parsedOutputValue];
+    } else if (typeof parsedOutputValue === "object") {
+      return [new AIMessage(JSON.stringify(parsedOutputValue, null, 2))];
     } else {
       throw new Error(
         `Expected a string, BaseMessage, or array of BaseMessages. Received: ${JSON.stringify(parsedOutputValue, null, 2)}`,
