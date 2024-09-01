@@ -19,6 +19,11 @@ export interface AiScraperBodyResponse {
   json: string;
 }
 
+export interface AiScraperV2BodyResponse {
+  desc: string;
+  json: string;
+}
+
 export interface AiIdentifierBodyResponse {
   content: string;
 }
