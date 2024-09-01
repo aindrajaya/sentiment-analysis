@@ -8,12 +8,15 @@ import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
 import { FaissStore } from "@langchain/community/vectorstores/faiss";
 import { RunnableConfig } from "@langchain/core/runnables";
-import { AgentExecutor, createOpenAIToolsAgent } from "langchain/agents";
+import { AgentExecutor } from "langchain/agents";
 import {
   ChatPromptTemplate,
   MessagesPlaceholder,
 } from "@langchain/core/prompts";
 import { StringOutputParser } from "@langchain/core/output_parsers";
+import { ChatGenerationChunk } from "@langchain/core/outputs";
+import { AIMessageChunk } from "@langchain/core/messages";
+import { JsonOutputParser } from "@langchain/core/output_parsers";
 // ================== Internal libs =====================
 import { MongoDBChatMessageHistory } from "../../utils/memory/chat_history.js";
 import {
@@ -221,20 +224,26 @@ export async function askAiV2(req: Request, res: Response) {
     const model = new ChatOpenAI({
       model: "gpt-4o-mini",
       temperature: 0,
+      streaming: true,
     });
+    model.pipe(new JsonOutputParser());
     const prompt = ChatPromptTemplate.fromMessages([
       [
         "system",
         "You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape from available web content, you can use available tools that will help you to answer",
       ],
-      new MessagesPlaceholder("chat_history"),
+      // new MessagesPlaceholder("chat_history"),
       ["user", "{input}"],
       new MessagesPlaceholder("agent_scratchpad"),
     ]);
     const tools = [new SearchWebContentTool(docs)];
 
     const finalResponseSchema = z.object({
-      desc: z.string().describe("The description of scraped data"),
+      desc: z
+        .string()
+        .describe(
+          "The explanation of scraped data. \n !IMPORTANT: add extra description and clear explanation about data scraped. all answer must be efficient and easy to understand and related to input and you have to make sure data scraped is shown with your extra description.",
+        ),
       json: z
         .string()
         .describe(
@@ -246,6 +255,7 @@ export async function askAiV2(req: Request, res: Response) {
       tools,
       prompt,
       finalResponseSchema,
+      streamRunnable: true,
     });
     const runnable = new AgentExecutor({
       agent,
@@ -257,27 +267,72 @@ export async function askAiV2(req: Request, res: Response) {
       getMessageHistory: (_sessionId) => memory,
       inputMessagesKey: "input",
       historyMessagesKey: "chat_history",
+      outputMessagesKey: "output",
     });
 
     const config: RunnableConfig = {
       configurable: { sessionId: { id: sessionId, userId } },
     };
 
-    let output = await withHistory.invoke(
-      {
-        input: task,
-      },
-      config,
-    );
-    console.log("Output", output);
-    if (output) {
-      return successResponse(
-        res,
-        "AI Scraper completed successfully",
-        output,
-        200,
-      );
+    const logStream = await withHistory.streamLog({ input: task }, config);
+    let currentDesc = "";
+    let currentJson = "";
+    let currentStream = "";
+    for await (const chunk of logStream) {
+      if (
+        chunk.ops.length > 1 &&
+        chunk.ops[1].op == "add" &&
+        chunk.ops[1].path == "/logs/ChatOpenAI:2/streamed_output/-"
+      ) {
+        const addOp = chunk.ops[1];
+        if (
+          addOp.value instanceof ChatGenerationChunk &&
+          addOp.value.message instanceof AIMessageChunk
+        ) {
+          const content =
+            addOp.value.message.additional_kwargs.function_call?.arguments;
+          const data: { desc: string; json: string } = {
+            desc: "",
+            json: "",
+          };
+          if (typeof content == "string") {
+            if (content.includes("desc")) {
+              currentStream = "desc";
+            } else if (content.includes("json")) {
+              currentStream = "json";
+            }
+
+            if (currentStream == "desc") {
+              currentDesc += content;
+              currentDesc = currentDesc
+                .replace("desc", "")
+                .replace(`desc":"`, "")
+                .replace(`":"`, "")
+                .replace(`"`, "")
+                .replace(`:`, "")
+                .replace(`","`, "")
+                .replace(`,"`, "");
+              data.desc = currentDesc;
+            } else if (currentStream == "json") {
+              currentJson += content;
+              data.desc = currentDesc;
+              if (currentJson.includes("```json")) {
+                const jsonContentMatch =
+                  currentJson.match(/```json([\s\S]*?)```/);
+                if (!jsonContentMatch) {
+                  // if no json match found, then use the current json start from ```json to the end
+                  const startIndex = currentJson.indexOf("```json");
+                  data.json = currentJson.substring(startIndex);
+                } else {
+                  data.json = "```json" + jsonContentMatch[1] + "```";
+                }
+              }
+            }
+          }
+        }
+      }
     }
+
     return errorResponse(
       res,
       "Internal server error",
