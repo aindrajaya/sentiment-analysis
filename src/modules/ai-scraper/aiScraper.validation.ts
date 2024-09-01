@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { validate } from "../../utils/helper.util.js";
+import { socketValidate, validate } from "../../utils/helper.util.js";
 
 const AiScraperSchema = z.object({
   body: z.object({
@@ -38,7 +38,7 @@ const AiIdentifierSchema = z.object({
 });
 
 const aiScraperValidation = validate(AiScraperSchema);
-const aiScraperV2Validation = validate(AiScraperSchemaV2);
+const aiScraperV2Validation = socketValidate(AiScraperSchemaV2);
 const aiIdentifierValidation = validate(AiIdentifierSchema);
 
 export { aiScraperValidation, aiIdentifierValidation, aiScraperV2Validation };
