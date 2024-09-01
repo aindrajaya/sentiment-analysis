@@ -337,10 +337,36 @@ export async function askAiV2(
                 } else {
                   data.json = "```json" + jsonContentMatch[1] + "```";
                 }
+              } else {
+                console.log("current json", currentJson);
+                if (currentJson.includes(`json":"`)) {
+                  const jsonContentMatch =
+                    currentJson.match(/json": "([\s\S]*?)"/);
+                  if (!jsonContentMatch) {
+                    const startIndex = currentJson.indexOf(`json": "`);
+                    data.json =
+                      "```json \n" +
+                      currentJson.substring(startIndex + 8) +
+                      "```";
+                  } else {
+                    data.json = "```json" + jsonContentMatch[1] + "```";
+                  }
+                }
               }
             }
             callback(data);
           }
+        }
+      } else if (
+        chunk.ops.length > 0 &&
+        chunk.ops[0].op == "replace" &&
+        chunk.ops[0].path == "/final_output"
+      ) {
+        const replaceOp = chunk.ops[0];
+        const content = replaceOp.value.output;
+
+        if (content) {
+          callback(content);
         }
       }
     }
