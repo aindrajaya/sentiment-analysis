@@ -10,6 +10,8 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { ObjectAny } from "../interfaces/general.i.js";
 import { NextFunction, Request, Response } from "express";
 import { encodingForModel, TiktokenModel } from "js-tiktoken";
+import { AiScraperV2BodyRequest } from "../modules/ai-scraper/types/interface.js";
+import { platformApiUrl } from "../configs/general.config.js";
 // ================== Req/Res Helper ===================
 function errorResponse<T>(
   res: Response,
@@ -71,6 +73,31 @@ async function hookResponse<T>(
   }
 }
 
+const apiUrl = platformApiUrl + "/account";
+async function validateToken(token: string) {
+  console.log("Validate API URL:", apiUrl);
+  const bearer = "Bearer " + token;
+  console.log("Bearer:", bearer);
+
+  const res = await fetch(apiUrl, {
+    headers: {
+      Authorization: bearer,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+  });
+
+  if (!res.ok) {
+    console.log("response:", res);
+    return false;
+  }
+
+  const data = await res.json();
+  console.log("result:", JSON.stringify(data, null, 2));
+
+  return true;
+}
+
 function validate(scheme: z.ZodSchema<object>) {
   return (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -86,6 +113,23 @@ function validate(scheme: z.ZodSchema<object>) {
         return errorResponse(res, error.errors[0].message, null, 400);
       }
       return errorResponse(res, "Internal server error", error?.message, 500);
+    }
+  };
+}
+
+function socketValidate(scheme: z.ZodSchema<object>) {
+  return (payload: AiScraperV2BodyRequest) => {
+    try {
+      scheme.parse({
+        body: payload,
+      });
+
+      return { status: true, message: "Validated" };
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return { status: false, message: error.errors[0].message };
+      }
+      return { status: false, message: "Internal server error" };
     }
   };
 }
@@ -177,19 +221,30 @@ export async function configurePage(page: Page, event: ObjectAny) {
 }
 
 // ===================== Open AI Helper =====================
-export function countTokens(text: string, model: TiktokenModel = "gpt-4o-mini") {
+export function countTokens(
+  text: string,
+  model: TiktokenModel = "gpt-4o-mini",
+) {
   const encoding = encodingForModel(model);
   const tokens = encoding.encode(text);
   return tokens.length;
 }
 
-export function limitTokens(text: string, tokensLimit: number, model: TiktokenModel = "gpt-4o-mini") {
+export function limitTokens(
+  text: string,
+  tokensLimit: number,
+  model: TiktokenModel = "gpt-4o-mini",
+) {
   const encoding = encodingForModel(model);
-  const tokens = encoding
-    .encode(text)
-    .slice(0, tokensLimit);
+  const tokens = encoding.encode(text).slice(0, tokensLimit);
 
   return encoding.decode(tokens);
 }
 
-export { errorResponse, successResponse, validate };
+export {
+  errorResponse,
+  successResponse,
+  validate,
+  socketValidate,
+  validateToken,
+};
