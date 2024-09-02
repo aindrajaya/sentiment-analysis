@@ -8,6 +8,7 @@ import {
 import { Collection, Document, ObjectId, PushOperator } from "mongodb";
 import { Document as ChainDoc } from "@langchain/core/documents";
 import { db } from "../../configs/databases/mongodb.db.js";
+import { UsageMetadata } from "../../modules/ai-scraper/types/interface.js";
 interface MongoDBChatMessageHistoryProps {
   sessionId?: string;
   userId: string;
@@ -103,6 +104,7 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
       messages: [],
       inputToken: 0,
       outputToken: 0,
+      totalToken: 0,
       pageContent: content,
     });
     return session.insertedId.toString();
@@ -134,10 +136,29 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
       [this.idKey]: this.sessionId,
     });
     const messages = document?.messages || [];
-    if (messages.length > 3) {
-      messages.splice(0, messages.length - 3);
+    if (messages.length > 4) {
+      messages.splice(0, messages.length - 4);
     }
     return mapStoredMessagesToChatMessages(messages);
+  }
+
+  async addSessionUsageMetadata(metadata: UsageMetadata) {
+    console.log("update metadata", metadata);
+    if (metadata) {
+      await this.collection.updateOne(
+        {
+          userId: this.userId,
+          [this.idKey]: this.sessionId,
+        },
+        {
+          $inc: {
+            inputToken: metadata.input_tokens,
+            outputToken: metadata.output_tokens,
+            totalToken: metadata.total_tokens,
+          },
+        },
+      );
+    }
   }
 
   async addMessage(message: BaseMessage) {
