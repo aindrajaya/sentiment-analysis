@@ -17,6 +17,7 @@ import {
   BaseListChatMessageHistory,
 } from "@langchain/core/chat_history";
 import { Run } from "@langchain/core/tracers/base";
+import { AIOutputMessage } from "../message/ai.js";
 type GetSessionHistoryCallable = (
   ...args: Array<any>
 ) =>
@@ -148,7 +149,7 @@ export class ChainWithMessageHistory<
     } else if (isBaseMessage(parsedOutputValue)) {
       return [parsedOutputValue];
     } else if (typeof parsedOutputValue === "object") {
-      return [new AIMessage(JSON.stringify(parsedOutputValue, null, 2))];
+      return [new AIOutputMessage(JSON.stringify(parsedOutputValue, null, 2))];
     } else {
       throw new Error(
         `Expected a string, BaseMessage, or array of BaseMessages. Received: ${JSON.stringify(parsedOutputValue, null, 2)}`,
@@ -190,6 +191,7 @@ export class ChainWithMessageHistory<
         `Output values from 'Run' undefined. Run: ${JSON.stringify(run, null, 2)}`,
       );
     }
+    console.log("OUTPUT VALUE", outputValue);
     const outputMessages = this._getOutputMessages(outputValue);
     await history.addMessages([...inputMessages, ...outputMessages]);
   }
