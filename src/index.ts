@@ -33,7 +33,7 @@ async function main() {
         "http://127.0.0.1:8080",
         "https://app.mrscraper.com",
         "https://dev.mrscraper.com",
-        "https://app.mrscraper.test/",
+        "https://app.mrscraper.test",
       ],
     },
   });
