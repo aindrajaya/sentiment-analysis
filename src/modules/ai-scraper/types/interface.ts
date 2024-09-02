@@ -14,6 +14,11 @@ export interface AiScraperV2BodyRequest {
   userId: string;
 }
 
+export interface AiScraperV2FinalAnswerBodyRequest {
+  sessionId: string;
+  userId: string;
+}
+
 export interface AiScraperBodyResponse {
   task: string;
   json: string;
@@ -22,6 +27,12 @@ export interface AiScraperBodyResponse {
 export interface AiScraperV2BodyResponse {
   desc: string;
   json: string;
+}
+
+export interface AiScraperV2FinalAnswerBodyResponse {
+  finalAnswer?: string;
+  inputToken?: string;
+  outputToken?: string;
 }
 
 export interface AiIdentifierBodyResponse {

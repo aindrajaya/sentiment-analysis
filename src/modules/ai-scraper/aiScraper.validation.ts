@@ -26,6 +26,17 @@ const AiScraperSchemaV2 = z.object({
   }),
 });
 
+const AiScraperSchemaFinalAnswer = z.object({
+  body: z.object({
+    sessionId: z.string({
+      required_error: "Session ID is required",
+    }),
+    userId: z.string({
+      required_error: "User ID is required",
+    }),
+  }),
+});
+
 const AiIdentifierSchema = z.object({
   body: z.object({
     markdown: z.string({
@@ -40,5 +51,11 @@ const AiIdentifierSchema = z.object({
 const aiScraperValidation = validate(AiScraperSchema);
 const aiScraperV2Validation = socketValidate(AiScraperSchemaV2);
 const aiIdentifierValidation = validate(AiIdentifierSchema);
+const aiFinalAnswerValidation = validate(AiScraperSchemaFinalAnswer);
 
-export { aiScraperValidation, aiIdentifierValidation, aiScraperV2Validation };
+export {
+  aiScraperValidation,
+  aiIdentifierValidation,
+  aiScraperV2Validation,
+  aiFinalAnswerValidation,
+};

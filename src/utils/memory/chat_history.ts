@@ -110,6 +110,36 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
     return session.insertedId.toString();
   }
 
+  async saveFinalAnswer() {
+    const lastAnswer = await this.collection.findOne({
+      userId: this.userId,
+      [this.idKey]: this.sessionId,
+    });
+    const aiAnswers = lastAnswer?.messages.filter(
+      (message) => (message.type = "ai"),
+    );
+    const finalAnswer = aiAnswers
+      ? aiAnswers[aiAnswers.length - 1].data.content
+      : "";
+    await this.collection.updateOne(
+      {
+        [this.idKey]: this.sessionId,
+        userId: this.userId,
+      },
+      {
+        $set: {
+          aiFinalAnswer: finalAnswer,
+        },
+      },
+    );
+
+    return {
+      finalAnswer: finalAnswer,
+      inputToken: lastAnswer?.inputToken,
+      outputToken: lastAnswer?.outputToken,
+    };
+  }
+
   async getPageContent() {
     const document = await this.collection.findOne({
       userId: this.userId,

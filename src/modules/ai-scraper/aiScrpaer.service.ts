@@ -38,6 +38,7 @@ import {
   AiScraperBodyRequest,
   AiScraperV2BodyRequest,
   AiScraperV2BodyResponse,
+  AiScraperV2FinalAnswerBodyRequest,
   LLMResult,
 } from "./types/interface.js";
 import { SearchWebContentTool } from "../../utils/langchain/tools/searchWebContent.js";
@@ -283,7 +284,7 @@ export async function askAiV2(
     const prompt = ChatPromptTemplate.fromMessages([
       [
         "system",
-        "You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape from available web content, you can use available tools that will help you to answer",
+        "You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape/get from available web content, you can use available tools that will help you to answer",
       ],
       new MessagesPlaceholder("chat_history"),
       ["user", "{input}"],
@@ -449,6 +450,18 @@ export async function askAiV2(
       desc: "Ups, something went wrong.",
       json: `\`\`\`json {error: "${error?.message}" } \`\`\``,
     });
+  }
+}
+
+export async function saveFinalAnswer(req: Request, res: Response) {
+  try {
+    const { userId, sessionId } = req.body as AiScraperV2FinalAnswerBodyRequest;
+    const memory = new MongoDBChatMessageHistory({ userId, sessionId });
+    const result = memory.saveFinalAnswer();
+    return successResponse(res, "Final data already netted", result, 200);
+  } catch (error: any) {
+    console.error("Error", error);
+    return errorResponse(res, "Internal server error", error?.message, 500);
   }
 }
 
