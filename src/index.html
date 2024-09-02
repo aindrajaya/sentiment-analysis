@@ -81,6 +81,9 @@
       });
       socket.on("answer-ai-v2", (message) => {
         console.log(message);
+        if (typeof message === "string") {
+          message = JSON.parse(message);
+        }
         const { desc, json } = message;
         document.getElementById("desc").innerText = desc;
         document.getElementById("json").innerText = json;
