@@ -297,12 +297,15 @@ export async function askAiV2(
           chunk.ops[1].path == "/logs/ChatOpenAI/streamed_output/-")
       ) {
         const addOp = chunk.ops[1];
-        if (
-          addOp.value instanceof ChatGenerationChunk &&
-          addOp.value.message instanceof AIMessageChunk
-        ) {
-          const content =
-            addOp.value.message.additional_kwargs.function_call?.arguments;
+        if (addOp.value instanceof ChatGenerationChunk) {
+          let content: string | undefined;
+          if (addOp.value.text != "") {
+            content = addOp.value.text;
+          } else if (addOp.value.message instanceof AIMessageChunk) {
+            content =
+              addOp.value.message.additional_kwargs.function_call?.arguments;
+          }
+
           const data: AiScraperV2BodyResponse = {
             desc: "",
             json: "",
@@ -340,16 +343,20 @@ export async function askAiV2(
               } else {
                 console.log("current json", currentJson);
                 if (currentJson.includes(`json":"`)) {
-                  const jsonContentMatch =
-                    currentJson.match(/json": "([\s\S]*?)"/);
+                  const jsonContentMatch = currentJson.match(/json":"(.*)"/);
                   if (!jsonContentMatch) {
-                    const startIndex = currentJson.indexOf(`json": "`);
+                    const startIndex = currentJson.indexOf(`json":"`);
                     data.json =
                       "```json \n" +
                       currentJson.substring(startIndex + 8) +
                       "```";
                   } else {
-                    data.json = "```json" + jsonContentMatch[1] + "```";
+                    data.json =
+                      "```json" +
+                      jsonContentMatch[1]
+                        .replace(/\\"/g, '"')
+                        .replace(/\\\\/g, "\\") +
+                      "```";
                   }
                 }
               }
@@ -366,7 +373,15 @@ export async function askAiV2(
         const content = replaceOp.value.output;
 
         if (content) {
-          callback(content);
+          console.log("content", content);
+          let { desc, json } =
+            typeof content == "string" ? JSON.parse(content) : content;
+          json = json.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+          const jsonContentMatch = json.match(/```json([\s\S]*?)```/);
+          if (!jsonContentMatch) {
+            json = "```json" + json + "```";
+          }
+          callback({ desc, json });
         }
       }
     }
