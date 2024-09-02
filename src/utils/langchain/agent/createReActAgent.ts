@@ -88,7 +88,9 @@ export async function createReActAgent({
         // response function and can return an instance of `AgentFinish`
         if (function_call.name === "response") {
           return {
-            returnValues: { output: { ...toolInput } },
+            returnValues: {
+              output: { ...toolInput, usage_metadata: message.usage_metadata },
+            },
             log: message.content,
           };
         }
