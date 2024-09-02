@@ -12,6 +12,18 @@ const AiScraperSchema = z.object({
   }),
 });
 
-const aiScraperValidation = validate(AiScraperSchema);
+const AiIdentifierSchema = z.object({
+  body: z.object({
+    markdown: z.string({
+      required_error: "Markdown is required",
+    }),
+  }),
+});
 
-export { aiScraperValidation };
+const aiScraperValidation = validate(AiScraperSchema);
+const aiIdentifierValidation = validate(AiIdentifierSchema);
+
+export { 
+  aiScraperValidation,
+  aiIdentifierValidation,
+};
