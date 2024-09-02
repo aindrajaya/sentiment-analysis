@@ -42,7 +42,7 @@ export class SearchWebContentTool extends Tool {
       topN: 20,
     });
     const rerankResult = rerankedDocuments.map((r) => this.data[r.index]);
-    console.log("Rerank", rerankResult);
+    console.log("Reranked");
 
     const context = customFormatMarkdownDocAsString(rerankResult);
 
