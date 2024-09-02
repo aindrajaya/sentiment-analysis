@@ -457,7 +457,7 @@ export async function saveFinalAnswer(req: Request, res: Response) {
   try {
     const { userId, sessionId } = req.body as AiScraperV2FinalAnswerBodyRequest;
     const memory = new MongoDBChatMessageHistory({ userId, sessionId });
-    const result = memory.saveFinalAnswer();
+    const result = await memory.saveFinalAnswer();
     return successResponse(res, "Final data already netted", result, 200);
   } catch (error: any) {
     console.error("Error", error);

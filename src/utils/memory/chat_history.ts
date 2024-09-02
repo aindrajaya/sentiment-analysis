@@ -116,7 +116,7 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
       [this.idKey]: this.sessionId,
     });
     const aiAnswers = lastAnswer?.messages.filter(
-      (message) => (message.type = "ai"),
+      (message) => message.type == "ai",
     );
     const finalAnswer = aiAnswers
       ? aiAnswers[aiAnswers.length - 1].data.content
