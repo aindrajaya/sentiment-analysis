@@ -17,6 +17,8 @@ import { StringOutputParser } from "@langchain/core/output_parsers";
 import { ChatGenerationChunk } from "@langchain/core/outputs";
 import { AIMessageChunk } from "@langchain/core/messages";
 import { JsonOutputParser } from "@langchain/core/output_parsers";
+import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
+import { Serialized } from "@langchain/core/load/serializable";
 // ================== Internal libs =====================
 import { MongoDBChatMessageHistory } from "../../utils/memory/chat_history.js";
 import {
@@ -36,6 +38,7 @@ import {
   AiScraperBodyRequest,
   AiScraperV2BodyRequest,
   AiScraperV2BodyResponse,
+  LLMResult,
 } from "./types/interface.js";
 import { SearchWebContentTool } from "../../utils/langchain/tools/searchWebContent.js";
 import { createReActAgent } from "../../utils/langchain/agent/createReActAgent.js";
@@ -223,12 +226,58 @@ export async function askAiV2(
       chunkOverlap: 200,
     });
     const docs = await splitter.splitDocuments(splitMarkdown);
-    console.log("Split Markdown", docs);
+
+    const llmCallback = BaseCallbackHandler.fromMethods({
+      handleLLMStart(
+        llm: Serialized,
+        prompts: string[],
+        runId: string,
+        parentRunId?: string,
+        extraParams?: Record<string, unknown>,
+        tags?: string[],
+        metadata?: Record<string, unknown>,
+        runName?: string,
+      ) {
+        console.log("handleLLMStart: LLM:", { llm });
+        console.log("handleLLMStart: Prompt:", { prompts });
+        console.log("handleLLMStart: Metadata:", { metadata });
+      },
+      handleLLMEnd(
+        output: LLMResult,
+        runId: string,
+        parentRunId?: string,
+        tags?: string[],
+      ) {
+        if (output) {
+          console.log(
+            "handleLLMEnd: Output:",
+            JSON.stringify({ ...output.generations[0][0].message }, null, 2),
+          );
+          const usageMetadata =
+            output.generations[0][0].message?.kwargs?.usage_metadata ||
+            output.generations[0][0].message?.usage_metadata;
+          if (usageMetadata) {
+            console.log("handleLLMEnd: Usage Metadata:", { usageMetadata });
+            memory.addSessionUsageMetadata(usageMetadata);
+          }
+        }
+      },
+      handleChainStart(chain) {
+        console.log("handleChainStart: I'm the second handler!!", { chain });
+      },
+      handleAgentAction(action) {
+        console.log("handleAgentAction", action);
+      },
+      handleToolStart(tool) {
+        console.log("handleToolStart", { tool });
+      },
+    });
 
     const model = new ChatOpenAI({
       model: "gpt-4o-mini",
       temperature: 0,
       streaming: true,
+      callbacks: [llmCallback],
     });
     model.pipe(new JsonOutputParser());
     const prompt = ChatPromptTemplate.fromMessages([
@@ -264,7 +313,7 @@ export async function askAiV2(
     const runnable = new AgentExecutor({
       agent,
       tools,
-      verbose: true,
+      // verbose: true,
     });
     const withHistory = new ChainWithMessageHistory({
       runnable,
@@ -289,7 +338,7 @@ export async function askAiV2(
       } else {
         finalState = finalState.concat(chunk);
       }
-      console.log("Agent Chunk:", JSON.stringify(chunk, null, 2));
+      // console.log("Agent Chunk:", JSON.stringify(chunk, null, 2));
       if (
         chunk.ops.length > 1 &&
         chunk.ops[1].op == "add" &&
@@ -341,7 +390,7 @@ export async function askAiV2(
                   data.json = "```json" + jsonContentMatch[1] + "```";
                 }
               } else {
-                console.log("current json", currentJson);
+                // console.log("current json", currentJson);
                 if (currentJson.includes(`json":"`)) {
                   const jsonContentMatch = currentJson.match(/json":"(.*)"/);
                   if (!jsonContentMatch) {
@@ -370,18 +419,27 @@ export async function askAiV2(
         chunk.ops[0].path == "/final_output"
       ) {
         const replaceOp = chunk.ops[0];
-        const content = replaceOp.value.output;
+        const content = replaceOp.value?.output;
 
         if (content) {
           console.log("content", content);
-          let { desc, json } =
-            typeof content == "string" ? JSON.parse(content) : content;
-          json = json.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
-          const jsonContentMatch = json.match(/```json([\s\S]*?)```/);
-          if (!jsonContentMatch) {
-            json = "```json" + json + "```";
+          let result = { desc: "", json: "" };
+          try {
+            let { desc, json } =
+              typeof content == "string" ? JSON.parse(content) : content;
+            result.desc = desc;
+            json = json.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+            const jsonContentMatch = json.match(/```json([\s\S]*?)```/);
+            if (!jsonContentMatch) {
+              json = "```json" + json + "```";
+            }
+            result.json = json;
+          } catch (error) {
+            if (typeof content == "string") {
+              result.desc = content;
+            }
           }
-          callback({ desc, json });
+          callback(result);
         }
       }
     }
