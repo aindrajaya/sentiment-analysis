@@ -23,14 +23,25 @@ const __dirname = path.dirname(__filename);
 async function main() {
   const port = config.port || 3000;
   const app = express();
+  configServer(app);
+
   const server = createServer(app);
-  const io = new Server(server);
+  const io = new Server(server, {
+    cors: {
+      origin: [
+        "http://localhost:3000",
+        "http://127.0.0.1:8080",
+        "https://app.mrscraper.com",
+        "https://dev.mrscraper.com",
+        "https://app.mrscraper.test/",
+      ],
+    },
+  });
   await connectToMongo();
   if (!db) {
     console.log("MongoDB connection failed");
     process.exit(1);
   }
-  configServer(app);
 
   /*
    * Web Socket Server
@@ -48,9 +59,9 @@ async function main() {
   // use this endpoint to test the ai scraper v2 with simple client
   // NOTE: if you want to test the ai scraper v2, you need change staticly the session id and the user id in the index.html file (scroll down to the bottom of the file to see the script tag and change the value of the sessionId and userId variables to the desired values)
 
-  // app.get("/test/ai-scraper-v2", (req: Request, res: Response) => {
-  //   res.sendFile(join(__dirname, "index.html"));
-  // });
+  app.get("/test/ai-scraper-v2", (req: Request, res: Response) => {
+    res.sendFile(join(__dirname, "index.html"));
+  });
   app.use("/detect-sentiment", apiKey, sentimentRouter);
   app.use("/ai-scraper", apiKey, aiScraperRouter);
 
