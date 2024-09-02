@@ -8,11 +8,8 @@ import { OpenAIClient } from "@langchain/openai";
 import { BasePromptTemplate } from "@langchain/core/prompts";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { ZodSchema, z } from "zod";
-import {
-  AgentRunnableSequence,
-  type AgentFinish,
-  type AgentStep,
-} from "langchain/agents";
+import { type AgentFinish, type AgentStep } from "langchain/agents";
+import { AgentRunnableSequence } from "./libs/agent.js";
 import {
   AIMessage,
   FunctionMessage,
@@ -20,10 +17,7 @@ import {
 } from "@langchain/core/messages";
 import type { FunctionsAgentAction } from "langchain/agents/openai/output_parser";
 import { convertToOpenAIFunction } from "@langchain/core/utils/function_calling";
-import {
-  RunnableSequence,
-  RunnablePassthrough,
-} from "@langchain/core/runnables";
+import { RunnablePassthrough } from "@langchain/core/runnables";
 import { Tool } from "langchain/tools";
 
 export const defaultResponseSchema = z.object({
