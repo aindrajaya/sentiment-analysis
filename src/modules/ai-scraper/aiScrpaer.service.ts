@@ -305,7 +305,7 @@ export async function askAiV2(
       json: z
         .string()
         .describe(
-          "the json format of scraped data, !IMPORTANT should in json markdown format like ```json RESULT_HERE ```",
+          "the json format of scraped data, !IMPORTANT should in json markdown format and prety like ```json RESULT_HERE ```",
         ),
     });
     const agent = await createReActAgent({
