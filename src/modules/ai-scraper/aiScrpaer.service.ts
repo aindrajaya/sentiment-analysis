@@ -13,7 +13,6 @@ import {
   ChatPromptTemplate,
   MessagesPlaceholder,
 } from "@langchain/core/prompts";
-import { StringOutputParser } from "@langchain/core/output_parsers";
 import { ChatGenerationChunk } from "@langchain/core/outputs";
 import { AIMessageChunk } from "@langchain/core/messages";
 import { JsonOutputParser } from "@langchain/core/output_parsers";
@@ -39,11 +38,16 @@ import {
   AiScraperV2BodyRequest,
   AiScraperV2BodyResponse,
   AiScraperV2FinalAnswerBodyRequest,
+  AiScraperV2GetChatHistoryBodyResponse,
+  AiScraperV2GetChatHistoryParamsRequest,
+  AiScraperV2GetSessionsBodyResponse,
+  AiScraperV2GetSessionsParamsRequest,
   LLMResult,
 } from "./types/interface.js";
 import { SearchWebContentTool } from "../../utils/langchain/tools/searchWebContent.js";
 import { createReActAgent } from "../../utils/langchain/agent/createReActAgent.js";
 import { ChainWithMessageHistory } from "../../utils/langchain/chain/chainWithHistory.js";
+import { JsonOutputFunctionsParser } from "langchain/output_parsers";
 
 // NOTE: PIPELINE: ETL process -> vectorization -> similiarity search -> reranking -> chat ai -> output parser
 export async function askAi(req: Request, res: Response) {
@@ -453,6 +457,39 @@ export async function askAiV2(
   }
 }
 
+export async function getSessions(req: Request, res: Response) {
+  try {
+    const { userId } =
+      req.params as unknown as AiScraperV2GetSessionsParamsRequest;
+    const memory = new MongoDBChatMessageHistory({ userId });
+    const result: AiScraperV2GetSessionsBodyResponse[] =
+      await memory.getSessions();
+    return successResponse(
+      res,
+      "Your sessions successfully netted",
+      result,
+      200,
+    );
+  } catch (error: any) {
+    console.error("Error", error);
+    return errorResponse(res, "Internal server error", error?.message, 500);
+  }
+}
+
+export async function getChatHistory(req: Request, res: Response) {
+  try {
+    const { userId, sessionId } =
+      req.params as unknown as AiScraperV2GetChatHistoryParamsRequest;
+    const memory = new MongoDBChatMessageHistory({ userId, sessionId });
+    const result: AiScraperV2GetChatHistoryBodyResponse =
+      await memory.getChatHistory();
+    return successResponse(res, "Hi, welcome back!", result, 200);
+  } catch (error: any) {
+    console.error("Error", error);
+    return errorResponse(res, "Internal server error", error?.message, 500);
+  }
+}
+
 export async function saveFinalAnswer(req: Request, res: Response) {
   try {
     const { userId, sessionId } = req.body as AiScraperV2FinalAnswerBodyRequest;
@@ -467,38 +504,106 @@ export async function saveFinalAnswer(req: Request, res: Response) {
 
 export async function identifyContent(req: Request, res: Response) {
   try {
-    const { markdown, userId } = req.body as AiIdentifierBodyRequest;
+    const { markdown, userId, url } = req.body as AiIdentifierBodyRequest;
     const context = limitTokens(markdown, 125_000);
+    let inputTokens = 0;
+    let outputTokens = 0;
     const prompt = ChatPromptTemplate.fromMessages([
       [
         "system",
-        "You are an AI Scraper assistance build by MR Scraper, your task is to tell user what data can be scraped from the web content given, please provide trully information what data can bet scraped without any additional information that is no included in the web content user given.",
+        "You are an AI Scraper assistance build by MR Scraper, your task is to create the title for this web and tell user what data can be scraped from the web content given, please provide trully information what data can be scraped without any additional information that is no included in the web content user given.",
       ],
-      ["user", "Web Content: {input}"],
+      ["user", "URL: {url},  Web Content: {input}"],
     ]);
-    const input = `Web Content:${context}`;
-    const inputTokens = countTokens(input);
-    console.log(`\n=======\nInput token usage: ${inputTokens}\n=======\n`);
 
+    const extractorSchema = {
+      name: "extractor",
+      description: "Extracts fields from the input.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: {
+            type: "string",
+            description: "The title of the web content",
+          },
+          content: {
+            type: "string",
+            description:
+              "information what data can be scraped without any additional information that is no included in the web content user given",
+          },
+        },
+      },
+    };
+    const parser = new JsonOutputFunctionsParser();
+    const llmCallback = BaseCallbackHandler.fromMethods({
+      handleLLMStart(
+        llm: Serialized,
+        prompts: string[],
+        runId: string,
+        parentRunId?: string,
+        extraParams?: Record<string, unknown>,
+        tags?: string[],
+        metadata?: Record<string, unknown>,
+        runName?: string,
+      ) {
+        console.log("handleLLMStart: LLM:", { llm });
+        console.log("handleLLMStart: Prompt:", { prompts });
+        console.log("handleLLMStart: Metadata:", { metadata });
+      },
+      handleLLMEnd(
+        output: LLMResult,
+        runId: string,
+        parentRunId?: string,
+        tags?: string[],
+      ) {
+        if (output) {
+          console.log(
+            "handleLLMEnd: Output:",
+            JSON.stringify({ ...output.generations[0][0].message }, null, 2),
+          );
+          const usageMetadata =
+            output.generations[0][0].message?.kwargs?.usage_metadata ||
+            output.generations[0][0].message?.usage_metadata;
+          if (usageMetadata) {
+            console.log("handleLLMEnd: Usage Metadata:", { usageMetadata });
+            const { input_tokens, output_tokens } = usageMetadata;
+            inputTokens += input_tokens;
+            outputTokens += output_tokens;
+          }
+        }
+      },
+      handleChainStart(chain) {
+        console.log("handleChainStart: I'm the second handler!!", { chain });
+      },
+      handleAgentAction(action) {
+        console.log("handleAgentAction", action);
+      },
+      handleToolStart(tool) {
+        console.log("handleToolStart", { tool });
+      },
+    });
     const chatModel = new ChatOpenAI({
       model: "gpt-4o-mini",
       temperature: 0,
+    }).bind({
+      functions: [extractorSchema],
+      function_call: { name: "extractor" },
+      callbacks: [llmCallback],
     });
-    const outputParser = new StringOutputParser();
-    const llmChain = prompt.pipe(chatModel).pipe(outputParser);
-    const result = await llmChain.invoke({ input: context });
+    const llmChain = prompt.pipe(chatModel).pipe(parser);
+    const result = await llmChain.invoke({ input: context, url });
     console.log("\nAnswer:\n", result);
     const output = result;
-    const outputTokens = countTokens(output);
+    console.log(`\n=======\nInput token usage: ${inputTokens}\n=======\n`);
     console.log(`\n=======\nOutput tokens usage: ${outputTokens}\n=======\n`);
     if (output) {
       const memory = new MongoDBChatMessageHistory({ userId });
-      const session = await memory.createSession(markdown);
+      const session = await memory.createSession(markdown, url);
       return successResponse(
         res,
         "AI Scraper completed successfully",
         {
-          content: output,
+          ...output,
           sesionId: session,
           inputTokens,
           outputTokens,
@@ -506,12 +611,6 @@ export async function identifyContent(req: Request, res: Response) {
         200,
       );
     }
-    return errorResponse(
-      res,
-      "Internal server error",
-      "Error parsing output",
-      500,
-    );
   } catch (error: any) {
     console.error("Error", error);
     return errorResponse(res, "Internal server error", error?.message, 500);
