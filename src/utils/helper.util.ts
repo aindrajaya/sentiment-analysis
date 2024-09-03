@@ -31,6 +31,10 @@ function successResponse<T>(
   res.status(code).json({ success: true, message, data });
 }
 
+function streamResponse<T>(res: Response, data: T) {
+  res.write(data);
+}
+
 async function hookResponse<T>(
   result: any | T,
   event: ObjectAny,
@@ -247,4 +251,5 @@ export {
   validate,
   socketValidate,
   validateToken,
+  streamResponse,
 };
