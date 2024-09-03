@@ -119,11 +119,9 @@ export function customFormatMarkdownDocAsString(docs: Document[]) {
           }
         })
         .join("\n");
-      console.log("\n=========\nMetadata\n==========\n", doc.metadata);
     }
     final += "\n\n" + doc.pageContent;
     result.add(final);
-    console.log("Result", Array.from(result).join("\n\n"));
   }
   return Array.from(result).join("\n");
 }

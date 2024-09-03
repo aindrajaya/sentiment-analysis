@@ -1,0 +1,111 @@
+<!doctype html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Socket.IO chat</title>
+    <style>
+      body {
+        margin: 0;
+        padding-bottom: 3rem;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Helvetica, Arial, sans-serif;
+      }
+
+      #form {
+        background: rgba(0, 0, 0, 0.15);
+        padding: 0.25rem;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        height: 3rem;
+        box-sizing: border-box;
+        backdrop-filter: blur(10px);
+      }
+      #input {
+        border: none;
+        padding: 0 1rem;
+        flex-grow: 1;
+        border-radius: 2rem;
+        margin: 0.25rem;
+      }
+      #input:focus {
+        outline: none;
+      }
+      #form > button {
+        background: #333;
+        border: none;
+        padding: 0 1rem;
+        margin: 0.25rem;
+        border-radius: 3px;
+        outline: none;
+        color: #fff;
+      }
+
+      #messages {
+        list-style-type: none;
+        margin: 0;
+        padding: 0;
+      }
+      #messages > li {
+        padding: 0.5rem 1rem;
+      }
+      #messages > li:nth-child(odd) {
+        background: #efefef;
+      }
+    </style>
+  </head>
+  <body>
+    <ul id="messages">
+      <li id="desc"></li>
+      <li id="json"></li>
+    </ul>
+    <form id="form" action="">
+      <input id="input" autocomplete="off" /><button>Send</button>
+    </form>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script>
+      const socket = io({
+        auth: {
+          apiKey:
+            "rDbnZu11T2g8PyyAhqmDNWCZDFryCwXMy9E6hg5VG7Gp32dq2x54RnQRehiQw5hB",
+        },
+      });
+      socket.on("connect", () => {
+        console.log(socket.id); // x8WIv7-mJelg7on_ALbx
+      });
+      socket.on("error", (error) => {
+        console.error(error);
+        socket.close();
+      });
+      socket.on("answer-ai-v2", (message) => {
+        console.log(message);
+        if (typeof message === "string") {
+          message = JSON.parse(message);
+        }
+        const { desc, json } = message;
+        document.getElementById("desc").innerText = desc;
+        document.getElementById("json").innerText = json;
+      });
+      socket.on("conversation-error", (message) => {
+        console.error(message);
+      });
+
+      const form = document.getElementById("form");
+      const input = document.getElementById("input");
+
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        if (input.value) {
+          socket.emit("ask-ai-v2", {
+            task: input.value,
+            sessionId: "66d4b0396e2e1356b16e94b0",
+            userId: "1",
+          });
+          input.value = "";
+        }
+      });
+    </script>
+  </body>
+</html>

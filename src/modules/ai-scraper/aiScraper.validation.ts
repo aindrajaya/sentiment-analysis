@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { validate } from "../../utils/helper.util.js";
+import { socketValidate, validate } from "../../utils/helper.util.js";
 
 const AiScraperSchema = z.object({
   body: z.object({
@@ -12,18 +12,50 @@ const AiScraperSchema = z.object({
   }),
 });
 
+const AiScraperSchemaV2 = z.object({
+  body: z.object({
+    sessionId: z.string({
+      required_error: "Session ID is required",
+    }),
+    userId: z.string({
+      required_error: "User ID is required",
+    }),
+    task: z.string({
+      required_error: "What data you need to scrape bro?",
+    }),
+  }),
+});
+
+const AiScraperSchemaFinalAnswer = z.object({
+  body: z.object({
+    sessionId: z.string({
+      required_error: "Session ID is required",
+    }),
+    userId: z.string({
+      required_error: "User ID is required",
+    }),
+  }),
+});
+
 const AiIdentifierSchema = z.object({
   body: z.object({
     markdown: z.string({
       required_error: "Markdown is required",
     }),
+    userId: z.string({
+      required_error: "User ID is required",
+    }),
   }),
 });
 
 const aiScraperValidation = validate(AiScraperSchema);
+const aiScraperV2Validation = socketValidate(AiScraperSchemaV2);
 const aiIdentifierValidation = validate(AiIdentifierSchema);
+const aiFinalAnswerValidation = validate(AiScraperSchemaFinalAnswer);
 
-export { 
+export {
   aiScraperValidation,
   aiIdentifierValidation,
+  aiScraperV2Validation,
+  aiFinalAnswerValidation,
 };
