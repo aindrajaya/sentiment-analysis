@@ -1,9 +1,12 @@
+import type { StoredMessage } from "@langchain/core/messages";
+
 export interface AiScraperBodyRequest {
   markdown: string;
   task: string;
 }
 
 export interface AiIdentifierBodyRequest {
+  url: string;
   markdown: string;
   userId: string;
 }
@@ -17,6 +20,15 @@ export interface AiScraperV2BodyRequest {
 export interface AiScraperV2FinalAnswerBodyRequest {
   sessionId: string;
   userId: string;
+}
+
+export interface AiScraperV2GetSessionsParamsRequest {
+  userId: string;
+}
+
+export interface AiScraperV2GetChatHistoryParamsRequest {
+  userId: string;
+  sessionId: string;
 }
 
 export interface AiScraperBodyResponse {
@@ -34,6 +46,13 @@ export interface AiScraperV2FinalAnswerBodyResponse {
   inputToken?: string;
   outputToken?: string;
 }
+
+export interface AiScraperV2GetSessionsBodyResponse {
+  sessionId: string;
+  name: string;
+}
+
+export type AiScraperV2GetChatHistoryBodyResponse = StoredMessage[];
 
 export interface AiIdentifierBodyResponse {
   content: string;
