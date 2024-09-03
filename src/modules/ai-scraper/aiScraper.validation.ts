@@ -37,6 +37,25 @@ const AiScraperSchemaFinalAnswer = z.object({
   }),
 });
 
+const AiScraperSchemaGetSessions = z.object({
+  params: z.object({
+    userId: z.string({
+      required_error: "User ID is required",
+    }),
+  }),
+});
+
+const AiScraperSchemaGetChatHistory = z.object({
+  params: z.object({
+    userId: z.string({
+      required_error: "User ID is required",
+    }),
+    sessionId: z.string({
+      required_error: "Session ID is required",
+    }),
+  }),
+});
+
 const AiIdentifierSchema = z.object({
   body: z.object({
     markdown: z.string({
@@ -45,12 +64,21 @@ const AiIdentifierSchema = z.object({
     userId: z.string({
       required_error: "User ID is required",
     }),
+    url: z
+      .string({
+        required_error: "URL is required",
+      })
+      .url({ message: "Invalid URL" }),
   }),
 });
 
 const aiScraperValidation = validate(AiScraperSchema);
 const aiScraperV2Validation = socketValidate(AiScraperSchemaV2);
 const aiIdentifierValidation = validate(AiIdentifierSchema);
+const aiScraperV2GetSessionsValidation = validate(AiScraperSchemaGetSessions);
+const aiScraperV2GetChatHistoryValidation = validate(
+  AiScraperSchemaGetChatHistory,
+);
 const aiFinalAnswerValidation = validate(AiScraperSchemaFinalAnswer);
 
 export {
@@ -58,4 +86,6 @@ export {
   aiIdentifierValidation,
   aiScraperV2Validation,
   aiFinalAnswerValidation,
+  aiScraperV2GetSessionsValidation,
+  aiScraperV2GetChatHistoryValidation,
 };
