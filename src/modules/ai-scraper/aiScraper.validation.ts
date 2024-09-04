@@ -74,6 +74,7 @@ const AiIdentifierSchema = z.object({
 
 const aiScraperValidation = validate(AiScraperSchema);
 const aiScraperV2Validation = socketValidate(AiScraperSchemaV2);
+const apiAiScraperV2Validation = validate(AiScraperSchemaV2);
 const aiIdentifierValidation = validate(AiIdentifierSchema);
 const aiScraperV2GetSessionsValidation = validate(AiScraperSchemaGetSessions);
 const aiScraperV2GetChatHistoryValidation = validate(
@@ -82,6 +83,7 @@ const aiScraperV2GetChatHistoryValidation = validate(
 const aiFinalAnswerValidation = validate(AiScraperSchemaFinalAnswer);
 
 export {
+  apiAiScraperV2Validation,
   aiScraperValidation,
   aiIdentifierValidation,
   aiScraperV2Validation,
