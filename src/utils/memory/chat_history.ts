@@ -9,7 +9,7 @@ import {
 import { Collection, Document, ObjectId, PushOperator } from "mongodb";
 import { Document as ChainDoc } from "@langchain/core/documents";
 import { db } from "../../configs/databases/mongodb.db.js";
-import { UsageMetadata } from "../../modules/ai-scraper/types/interface.js";
+import { UsageMetadata } from "../langchain/callbacks/llm/types/interfacte.js";
 interface MongoDBChatMessageHistoryProps {
   sessionId?: string;
   userId: string;
