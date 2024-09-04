@@ -18,18 +18,21 @@ import { AIMessageChunk } from "@langchain/core/messages";
 import { JsonOutputParser } from "@langchain/core/output_parsers";
 import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 import { Serialized } from "@langchain/core/load/serializable";
+import { JsonOutputFunctionsParser } from "langchain/output_parsers";
 // ================== Internal libs =====================
 import { MongoDBChatMessageHistory } from "../../utils/memory/chat_history.js";
 import {
   countTokens,
   errorResponse,
   limitTokens,
+  streamAIV2Response,
   successResponse,
 } from "../../utils/helper.util.js";
 import {
   customFormatMarkdownDocAsString,
   splitMarkdownByHeaders,
 } from "../../utils/etl/markdown.js";
+import { markdownSplitter } from "../../utils/etl/markdown.js";
 import jsonParser from "../../utils/etl/jsonParser.js";
 
 import {
@@ -42,12 +45,15 @@ import {
   AiScraperV2GetChatHistoryParamsRequest,
   AiScraperV2GetSessionsBodyResponse,
   AiScraperV2GetSessionsParamsRequest,
-  LLMResult,
 } from "./types/interface.js";
+import {
+  LLMResult,
+  UsageMetadata,
+} from "../../utils/langchain/callbacks/llm/types/interfacte.js";
 import { SearchWebContentTool } from "../../utils/langchain/tools/searchWebContent.js";
 import { createReActAgent } from "../../utils/langchain/agent/createReActAgent.js";
 import { ChainWithMessageHistory } from "../../utils/langchain/chain/chainWithHistory.js";
-import { JsonOutputFunctionsParser } from "langchain/output_parsers";
+import openAICallbackHandler from "../../utils/langchain/callbacks/llm/openAiCb.js";
 
 // NOTE: PIPELINE: ETL process -> vectorization -> similiarity search -> reranking -> chat ai -> output parser
 export async function askAi(req: Request, res: Response) {
@@ -216,79 +222,28 @@ export async function askAi(req: Request, res: Response) {
 export async function askAiV2(
   payload: AiScraperV2BodyRequest,
   callback: (response: AiScraperV2BodyResponse) => void,
+  streaming: boolean = true,
 ) {
   try {
     const { task, userId, sessionId } = payload;
     const memory = new MongoDBChatMessageHistory({ userId, sessionId });
     const markdown = await memory.getPageContent();
-    const splitMarkdown = splitMarkdownByHeaders(markdown, [
-      ["#", "Super Title"],
-      ["##", "Title"],
-      ["###", "Sub Title"],
-    ]);
-    const splitter = new RecursiveCharacterTextSplitter({
-      chunkSize: 2000,
-      chunkOverlap: 200,
-    });
-    const docs = await splitter.splitDocuments(splitMarkdown);
-
-    const llmCallback = BaseCallbackHandler.fromMethods({
-      handleLLMStart(
-        llm: Serialized,
-        prompts: string[],
-        runId: string,
-        parentRunId?: string,
-        extraParams?: Record<string, unknown>,
-        tags?: string[],
-        metadata?: Record<string, unknown>,
-        runName?: string,
-      ) {
-        console.log("handleLLMStart: LLM:", { llm });
-        console.log("handleLLMStart: Prompt:", { prompts });
-        console.log("handleLLMStart: Metadata:", { metadata });
-      },
-      handleLLMEnd(
-        output: LLMResult,
-        runId: string,
-        parentRunId?: string,
-        tags?: string[],
-      ) {
-        if (output) {
-          console.log(
-            "handleLLMEnd: Output:",
-            JSON.stringify({ ...output.generations[0][0].message }, null, 2),
-          );
-          const usageMetadata =
-            output.generations[0][0].message?.kwargs?.usage_metadata ||
-            output.generations[0][0].message?.usage_metadata;
-          if (usageMetadata) {
-            console.log("handleLLMEnd: Usage Metadata:", { usageMetadata });
-            memory.addSessionUsageMetadata(usageMetadata);
-          }
-        }
-      },
-      handleChainStart(chain) {
-        console.log("handleChainStart: I'm the second handler!!", { chain });
-      },
-      handleAgentAction(action) {
-        console.log("handleAgentAction", action);
-      },
-      handleToolStart(tool) {
-        console.log("handleToolStart", { tool });
-      },
-    });
-
+    const docs = await markdownSplitter(markdown);
+    const countTokens = (usageMetadata: UsageMetadata) => {
+      memory.addSessionUsageMetadata(usageMetadata);
+    };
+    const llmCallback = openAICallbackHandler(true, countTokens);
     const model = new ChatOpenAI({
       model: "gpt-4o-mini",
       temperature: 0,
-      streaming: true,
+      streaming,
       callbacks: [llmCallback],
     });
     model.pipe(new JsonOutputParser());
     const prompt = ChatPromptTemplate.fromMessages([
       [
         "system",
-        "You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape/get from available web content, you can use available tools that will help you to answer",
+        "You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape/get from available web content, you can use available tools that will help you to answer. If you have to return the data in json format, please make sure you return it with pretty json. \n !IMPORTANT Do not to give information that not included in the search result or history",
       ],
       new MessagesPlaceholder("chat_history"),
       ["user", "{input}"],
@@ -300,12 +255,12 @@ export async function askAiV2(
       desc: z
         .string()
         .describe(
-          "The explanation of scraped data. \n !IMPORTANT: add extra description and clear explanation about data scraped. all answer must be efficient and easy to understand and related to input and you have to make sure data scraped is shown with your extra description.",
+          "The explanation of scraped data. \n !IMPORTANT: add extra description and clear explanation about data scraped. all answer must be efficient and easy to understand and related to input and you have to make sure data scraped is shown with your extra description with readable format not json format!.",
         ),
       json: z
         .string()
         .describe(
-          "the json format of scraped data, !IMPORTANT should in json markdown format and prety like ```json RESULT_HERE ```",
+          "the json format of scraped data, !IMPORTANT should in json markdown format like ```json RESULT_HERE ```, make sure the json is in pretty with multiple line and readable.",
         ),
     });
     const agent = await createReActAgent({
@@ -313,7 +268,7 @@ export async function askAiV2(
       tools,
       prompt,
       finalResponseSchema,
-      streamRunnable: true,
+      streamRunnable: streaming,
     });
     const runnable = new AgentExecutor({
       agent,
@@ -332,121 +287,13 @@ export async function askAiV2(
       configurable: { sessionId: { id: sessionId, userId } },
     };
 
-    const logStream = await withHistory.streamLog({ input: task }, config);
-    let finalState;
-    let currentDesc = "";
-    let currentJson = "";
-    let currentStream = "";
-    for await (const chunk of logStream) {
-      if (!finalState) {
-        finalState = chunk;
-      } else {
-        finalState = finalState.concat(chunk);
-      }
-      // console.log("Agent Chunk:", JSON.stringify(chunk, null, 2));
-      if (
-        chunk.ops.length > 1 &&
-        chunk.ops[1].op == "add" &&
-        (chunk.ops[1].path == "/logs/ChatOpenAI:2/streamed_output/-" ||
-          chunk.ops[1].path == "/logs/ChatOpenAI/streamed_output/-")
-      ) {
-        const addOp = chunk.ops[1];
-        if (addOp.value instanceof ChatGenerationChunk) {
-          let content: string | undefined;
-          if (addOp.value.text != "") {
-            content = addOp.value.text;
-          } else if (addOp.value.message instanceof AIMessageChunk) {
-            content =
-              addOp.value.message.additional_kwargs.function_call?.arguments;
-          }
-
-          const data: AiScraperV2BodyResponse = {
-            desc: "",
-            json: "",
-          };
-          if (typeof content == "string") {
-            if (content.includes("desc")) {
-              currentStream = "desc";
-            } else if (content.includes("json")) {
-              currentStream = "json";
-            }
-
-            if (currentStream == "desc") {
-              currentDesc += content;
-              currentDesc = currentDesc
-                .replace("desc", "")
-                .replace(`desc":"`, "")
-                .replace(`":"`, "")
-                .replace(`"`, "")
-                .replace(`:`, "")
-                .replace(`","`, "")
-                .replace(`,"`, "");
-              data.desc = currentDesc;
-            } else if (currentStream == "json") {
-              currentJson += content;
-              data.desc = currentDesc;
-              if (currentJson.includes("```json")) {
-                const jsonContentMatch =
-                  currentJson.match(/```json([\s\S]*?)```/);
-                if (!jsonContentMatch) {
-                  const startIndex = currentJson.indexOf("```json");
-                  data.json = currentJson.substring(startIndex);
-                } else {
-                  data.json = "```json" + jsonContentMatch[1] + "```";
-                }
-              } else {
-                // console.log("current json", currentJson);
-                if (currentJson.includes(`json":"`)) {
-                  const jsonContentMatch = currentJson.match(/json":"(.*)"/);
-                  if (!jsonContentMatch) {
-                    const startIndex = currentJson.indexOf(`json":"`);
-                    data.json =
-                      "```json \n" +
-                      currentJson.substring(startIndex + 8) +
-                      "```";
-                  } else {
-                    data.json =
-                      "```json" +
-                      jsonContentMatch[1]
-                        .replace(/\\"/g, '"')
-                        .replace(/\\\\/g, "\\") +
-                      "```";
-                  }
-                }
-              }
-            }
-            callback(data);
-          }
-        }
-      } else if (
-        chunk.ops.length > 0 &&
-        chunk.ops[0].op == "replace" &&
-        chunk.ops[0].path == "/final_output"
-      ) {
-        const replaceOp = chunk.ops[0];
-        const content = replaceOp.value?.output;
-
-        if (content) {
-          console.log("content", content);
-          let result = { desc: "", json: "" };
-          try {
-            let { desc, json } =
-              typeof content == "string" ? JSON.parse(content) : content;
-            result.desc = desc;
-            json = json.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
-            const jsonContentMatch = json.match(/```json([\s\S]*?)```/);
-            if (!jsonContentMatch) {
-              json = "```json" + json + "```";
-            }
-            result.json = json;
-          } catch (error) {
-            if (typeof content == "string") {
-              result.desc = content;
-            }
-          }
-          callback(result);
-        }
-      }
+    if (streaming) {
+      const logStream = await withHistory.streamLog({ input: task }, config);
+      await streamAIV2Response(logStream, callback);
+    } else {
+      const result = await withHistory.invoke({ input: task }, config);
+      console.log("Result", result);
+      callback({ desc: result?.output?.desc, json: result?.output?.json });
     }
   } catch (error: any) {
     console.error("Error", error);
