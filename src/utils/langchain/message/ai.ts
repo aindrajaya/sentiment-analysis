@@ -5,7 +5,7 @@ import {
   AIMessageFields,
   MessageType,
 } from "@langchain/core/messages";
-import { UsageMetadata } from "../../../modules/ai-scraper/types/interface.js";
+import { UsageMetadata } from "../callbacks/llm/types/interfacte.js";
 
 export function defaultToolCallParser(
   rawToolCalls: Record<string, any>[],

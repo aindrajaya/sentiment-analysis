@@ -13,24 +13,26 @@ import {
   ChatPromptTemplate,
   MessagesPlaceholder,
 } from "@langchain/core/prompts";
-import { StringOutputParser } from "@langchain/core/output_parsers";
 import { ChatGenerationChunk } from "@langchain/core/outputs";
 import { AIMessageChunk } from "@langchain/core/messages";
 import { JsonOutputParser } from "@langchain/core/output_parsers";
 import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 import { Serialized } from "@langchain/core/load/serializable";
+import { JsonOutputFunctionsParser } from "langchain/output_parsers";
 // ================== Internal libs =====================
 import { MongoDBChatMessageHistory } from "../../utils/memory/chat_history.js";
 import {
   countTokens,
   errorResponse,
   limitTokens,
+  streamAIV2Response,
   successResponse,
 } from "../../utils/helper.util.js";
 import {
   customFormatMarkdownDocAsString,
   splitMarkdownByHeaders,
 } from "../../utils/etl/markdown.js";
+import { markdownSplitter } from "../../utils/etl/markdown.js";
 import jsonParser from "../../utils/etl/jsonParser.js";
 
 import {
@@ -39,11 +41,19 @@ import {
   AiScraperV2BodyRequest,
   AiScraperV2BodyResponse,
   AiScraperV2FinalAnswerBodyRequest,
-  LLMResult,
+  AiScraperV2GetChatHistoryBodyResponse,
+  AiScraperV2GetChatHistoryParamsRequest,
+  AiScraperV2GetSessionsBodyResponse,
+  AiScraperV2GetSessionsParamsRequest,
 } from "./types/interface.js";
+import {
+  LLMResult,
+  UsageMetadata,
+} from "../../utils/langchain/callbacks/llm/types/interfacte.js";
 import { SearchWebContentTool } from "../../utils/langchain/tools/searchWebContent.js";
 import { createReActAgent } from "../../utils/langchain/agent/createReActAgent.js";
 import { ChainWithMessageHistory } from "../../utils/langchain/chain/chainWithHistory.js";
+import openAICallbackHandler from "../../utils/langchain/callbacks/llm/openAiCb.js";
 
 // NOTE: PIPELINE: ETL process -> vectorization -> similiarity search -> reranking -> chat ai -> output parser
 export async function askAi(req: Request, res: Response) {
@@ -212,22 +222,166 @@ export async function askAi(req: Request, res: Response) {
 export async function askAiV2(
   payload: AiScraperV2BodyRequest,
   callback: (response: AiScraperV2BodyResponse) => void,
+  streaming: boolean = true,
 ) {
   try {
     const { task, userId, sessionId } = payload;
     const memory = new MongoDBChatMessageHistory({ userId, sessionId });
     const markdown = await memory.getPageContent();
-    const splitMarkdown = splitMarkdownByHeaders(markdown, [
-      ["#", "Super Title"],
-      ["##", "Title"],
-      ["###", "Sub Title"],
-    ]);
-    const splitter = new RecursiveCharacterTextSplitter({
-      chunkSize: 2000,
-      chunkOverlap: 200,
+    const docs = await markdownSplitter(markdown);
+    const countTokens = (usageMetadata: UsageMetadata) => {
+      memory.addSessionUsageMetadata(usageMetadata);
+    };
+    const llmCallback = openAICallbackHandler(true, countTokens);
+    const model = new ChatOpenAI({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      streaming,
+      callbacks: [llmCallback],
     });
-    const docs = await splitter.splitDocuments(splitMarkdown);
+    model.pipe(new JsonOutputParser());
+    const prompt = ChatPromptTemplate.fromMessages([
+      [
+        "system",
+        "You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape/get from available web content, you can use available tools that will help you to answer. If you have to return the data in json format, please make sure you return it with pretty json. \n !IMPORTANT Do not to give information that not included in the search result or history",
+      ],
+      new MessagesPlaceholder("chat_history"),
+      ["user", "{input}"],
+      new MessagesPlaceholder("agent_scratchpad"),
+    ]);
+    const tools = [new SearchWebContentTool(docs)];
 
+    const finalResponseSchema = z.object({
+      desc: z
+        .string()
+        .describe(
+          "The explanation of scraped data. \n !IMPORTANT: add extra description and clear explanation about data scraped. all answer must be efficient and easy to understand and related to input and you have to make sure data scraped is shown with your extra description with readable format not json format!.",
+        ),
+      json: z
+        .string()
+        .describe(
+          "the json format of scraped data, !IMPORTANT should in json markdown format like ```json RESULT_HERE ```, make sure the json is in pretty with multiple line and readable.",
+        ),
+    });
+    const agent = await createReActAgent({
+      model,
+      tools,
+      prompt,
+      finalResponseSchema,
+      streamRunnable: streaming,
+    });
+    const runnable = new AgentExecutor({
+      agent,
+      tools,
+      // verbose: true,
+    });
+    const withHistory = new ChainWithMessageHistory({
+      runnable,
+      getMessageHistory: (_sessionId) => memory,
+      inputMessagesKey: "input",
+      historyMessagesKey: "chat_history",
+      outputMessagesKey: "output",
+    });
+
+    const config: RunnableConfig = {
+      configurable: { sessionId: { id: sessionId, userId } },
+    };
+
+    if (streaming) {
+      const logStream = await withHistory.streamLog({ input: task }, config);
+      await streamAIV2Response(logStream, callback);
+    } else {
+      const result = await withHistory.invoke({ input: task }, config);
+      console.log("Result", result);
+      callback({ desc: result?.output?.desc, json: result?.output?.json });
+    }
+  } catch (error: any) {
+    console.error("Error", error);
+    callback({
+      desc: "Ups, something went wrong.",
+      json: `\`\`\`json {error: "${error?.message}" } \`\`\``,
+    });
+  }
+}
+
+export async function getSessions(req: Request, res: Response) {
+  try {
+    const { userId } =
+      req.params as unknown as AiScraperV2GetSessionsParamsRequest;
+    const memory = new MongoDBChatMessageHistory({ userId });
+    const result: AiScraperV2GetSessionsBodyResponse[] =
+      await memory.getSessions();
+    return successResponse(
+      res,
+      "Your sessions successfully netted",
+      result,
+      200,
+    );
+  } catch (error: any) {
+    console.error("Error", error);
+    return errorResponse(res, "Internal server error", error?.message, 500);
+  }
+}
+
+export async function getChatHistory(req: Request, res: Response) {
+  try {
+    const { userId, sessionId } =
+      req.params as unknown as AiScraperV2GetChatHistoryParamsRequest;
+    const memory = new MongoDBChatMessageHistory({ userId, sessionId });
+    const result: AiScraperV2GetChatHistoryBodyResponse =
+      await memory.getChatHistory();
+    return successResponse(res, "Hi, welcome back!", result, 200);
+  } catch (error: any) {
+    console.error("Error", error);
+    return errorResponse(res, "Internal server error", error?.message, 500);
+  }
+}
+
+export async function saveFinalAnswer(req: Request, res: Response) {
+  try {
+    const { userId, sessionId } = req.body as AiScraperV2FinalAnswerBodyRequest;
+    const memory = new MongoDBChatMessageHistory({ userId, sessionId });
+    const result = await memory.saveFinalAnswer();
+    return successResponse(res, "Final data already netted", result, 200);
+  } catch (error: any) {
+    console.error("Error", error);
+    return errorResponse(res, "Internal server error", error?.message, 500);
+  }
+}
+
+export async function identifyContent(req: Request, res: Response) {
+  try {
+    const { markdown, userId, url } = req.body as AiIdentifierBodyRequest;
+    const context = limitTokens(markdown, 125_000);
+    let inputTokens = 0;
+    let outputTokens = 0;
+    const prompt = ChatPromptTemplate.fromMessages([
+      [
+        "system",
+        "You are an AI Scraper assistance build by MR Scraper, your task is to create the title for this web and tell user what data can be scraped from the web content given, please provide trully information what data can be scraped without any additional information that is no included in the web content user given.",
+      ],
+      ["user", "URL: {url},  Web Content: {input}"],
+    ]);
+
+    const extractorSchema = {
+      name: "extractor",
+      description: "Extracts fields from the input.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: {
+            type: "string",
+            description: "The title of the web content",
+          },
+          content: {
+            type: "string",
+            description:
+              "information what data can be scraped without any additional information that is no included in the web content user given",
+          },
+        },
+      },
+    };
+    const parser = new JsonOutputFunctionsParser();
     const llmCallback = BaseCallbackHandler.fromMethods({
       handleLLMStart(
         llm: Serialized,
@@ -259,7 +413,9 @@ export async function askAiV2(
             output.generations[0][0].message?.usage_metadata;
           if (usageMetadata) {
             console.log("handleLLMEnd: Usage Metadata:", { usageMetadata });
-            memory.addSessionUsageMetadata(usageMetadata);
+            const { input_tokens, output_tokens } = usageMetadata;
+            inputTokens += input_tokens;
+            outputTokens += output_tokens;
           }
         }
       },
@@ -273,232 +429,28 @@ export async function askAiV2(
         console.log("handleToolStart", { tool });
       },
     });
-
-    const model = new ChatOpenAI({
-      model: "gpt-4o-mini",
-      temperature: 0,
-      streaming: true,
-      callbacks: [llmCallback],
-    });
-    model.pipe(new JsonOutputParser());
-    const prompt = ChatPromptTemplate.fromMessages([
-      [
-        "system",
-        "You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape/get from available web content, you can use available tools that will help you to answer",
-      ],
-      new MessagesPlaceholder("chat_history"),
-      ["user", "{input}"],
-      new MessagesPlaceholder("agent_scratchpad"),
-    ]);
-    const tools = [new SearchWebContentTool(docs)];
-
-    const finalResponseSchema = z.object({
-      desc: z
-        .string()
-        .describe(
-          "The explanation of scraped data. \n !IMPORTANT: add extra description and clear explanation about data scraped. all answer must be efficient and easy to understand and related to input and you have to make sure data scraped is shown with your extra description.",
-        ),
-      json: z
-        .string()
-        .describe(
-          "the json format of scraped data, !IMPORTANT should in json markdown format like ```json RESULT_HERE ```",
-        ),
-    });
-    const agent = await createReActAgent({
-      model,
-      tools,
-      prompt,
-      finalResponseSchema,
-      streamRunnable: true,
-    });
-    const runnable = new AgentExecutor({
-      agent,
-      tools,
-      // verbose: true,
-    });
-    const withHistory = new ChainWithMessageHistory({
-      runnable,
-      getMessageHistory: (_sessionId) => memory,
-      inputMessagesKey: "input",
-      historyMessagesKey: "chat_history",
-      outputMessagesKey: "output",
-    });
-
-    const config: RunnableConfig = {
-      configurable: { sessionId: { id: sessionId, userId } },
-    };
-
-    const logStream = await withHistory.streamLog({ input: task }, config);
-    let finalState;
-    let currentDesc = "";
-    let currentJson = "";
-    let currentStream = "";
-    for await (const chunk of logStream) {
-      if (!finalState) {
-        finalState = chunk;
-      } else {
-        finalState = finalState.concat(chunk);
-      }
-      // console.log("Agent Chunk:", JSON.stringify(chunk, null, 2));
-      if (
-        chunk.ops.length > 1 &&
-        chunk.ops[1].op == "add" &&
-        (chunk.ops[1].path == "/logs/ChatOpenAI:2/streamed_output/-" ||
-          chunk.ops[1].path == "/logs/ChatOpenAI/streamed_output/-")
-      ) {
-        const addOp = chunk.ops[1];
-        if (addOp.value instanceof ChatGenerationChunk) {
-          let content: string | undefined;
-          if (addOp.value.text != "") {
-            content = addOp.value.text;
-          } else if (addOp.value.message instanceof AIMessageChunk) {
-            content =
-              addOp.value.message.additional_kwargs.function_call?.arguments;
-          }
-
-          const data: AiScraperV2BodyResponse = {
-            desc: "",
-            json: "",
-          };
-          if (typeof content == "string") {
-            if (content.includes("desc")) {
-              currentStream = "desc";
-            } else if (content.includes("json")) {
-              currentStream = "json";
-            }
-
-            if (currentStream == "desc") {
-              currentDesc += content;
-              currentDesc = currentDesc
-                .replace("desc", "")
-                .replace(`desc":"`, "")
-                .replace(`":"`, "")
-                .replace(`"`, "")
-                .replace(`:`, "")
-                .replace(`","`, "")
-                .replace(`,"`, "");
-              data.desc = currentDesc;
-            } else if (currentStream == "json") {
-              currentJson += content;
-              data.desc = currentDesc;
-              if (currentJson.includes("```json")) {
-                const jsonContentMatch =
-                  currentJson.match(/```json([\s\S]*?)```/);
-                if (!jsonContentMatch) {
-                  const startIndex = currentJson.indexOf("```json");
-                  data.json = currentJson.substring(startIndex);
-                } else {
-                  data.json = "```json" + jsonContentMatch[1] + "```";
-                }
-              } else {
-                // console.log("current json", currentJson);
-                if (currentJson.includes(`json":"`)) {
-                  const jsonContentMatch = currentJson.match(/json":"(.*)"/);
-                  if (!jsonContentMatch) {
-                    const startIndex = currentJson.indexOf(`json":"`);
-                    data.json =
-                      "```json \n" +
-                      currentJson.substring(startIndex + 8) +
-                      "```";
-                  } else {
-                    data.json =
-                      "```json" +
-                      jsonContentMatch[1]
-                        .replace(/\\"/g, '"')
-                        .replace(/\\\\/g, "\\") +
-                      "```";
-                  }
-                }
-              }
-            }
-            callback(data);
-          }
-        }
-      } else if (
-        chunk.ops.length > 0 &&
-        chunk.ops[0].op == "replace" &&
-        chunk.ops[0].path == "/final_output"
-      ) {
-        const replaceOp = chunk.ops[0];
-        const content = replaceOp.value?.output;
-
-        if (content) {
-          console.log("content", content);
-          let result = { desc: "", json: "" };
-          try {
-            let { desc, json } =
-              typeof content == "string" ? JSON.parse(content) : content;
-            result.desc = desc;
-            json = json.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
-            const jsonContentMatch = json.match(/```json([\s\S]*?)```/);
-            if (!jsonContentMatch) {
-              json = "```json" + json + "```";
-            }
-            result.json = json;
-          } catch (error) {
-            if (typeof content == "string") {
-              result.desc = content;
-            }
-          }
-          callback(result);
-        }
-      }
-    }
-  } catch (error: any) {
-    console.error("Error", error);
-    callback({
-      desc: "Ups, something went wrong.",
-      json: `\`\`\`json {error: "${error?.message}" } \`\`\``,
-    });
-  }
-}
-
-export async function saveFinalAnswer(req: Request, res: Response) {
-  try {
-    const { userId, sessionId } = req.body as AiScraperV2FinalAnswerBodyRequest;
-    const memory = new MongoDBChatMessageHistory({ userId, sessionId });
-    const result = await memory.saveFinalAnswer();
-    return successResponse(res, "Final data already netted", result, 200);
-  } catch (error: any) {
-    console.error("Error", error);
-    return errorResponse(res, "Internal server error", error?.message, 500);
-  }
-}
-
-export async function identifyContent(req: Request, res: Response) {
-  try {
-    const { markdown, userId } = req.body as AiIdentifierBodyRequest;
-    const context = limitTokens(markdown, 125_000);
-    const prompt = ChatPromptTemplate.fromMessages([
-      [
-        "system",
-        "You are an AI Scraper assistance build by MR Scraper, your task is to tell user what data can be scraped from the web content given, please provide trully information what data can bet scraped without any additional information that is no included in the web content user given.",
-      ],
-      ["user", "Web Content: {input}"],
-    ]);
-    const input = `Web Content:${context}`;
-    const inputTokens = countTokens(input);
-    console.log(`\n=======\nInput token usage: ${inputTokens}\n=======\n`);
-
     const chatModel = new ChatOpenAI({
       model: "gpt-4o-mini",
       temperature: 0,
+    }).bind({
+      functions: [extractorSchema],
+      function_call: { name: "extractor" },
+      callbacks: [llmCallback],
     });
-    const outputParser = new StringOutputParser();
-    const llmChain = prompt.pipe(chatModel).pipe(outputParser);
-    const result = await llmChain.invoke({ input: context });
+    const llmChain = prompt.pipe(chatModel).pipe(parser);
+    const result = await llmChain.invoke({ input: context, url });
     console.log("\nAnswer:\n", result);
     const output = result;
-    const outputTokens = countTokens(output);
+    console.log(`\n=======\nInput token usage: ${inputTokens}\n=======\n`);
     console.log(`\n=======\nOutput tokens usage: ${outputTokens}\n=======\n`);
     if (output) {
       const memory = new MongoDBChatMessageHistory({ userId });
-      const session = await memory.createSession(markdown);
+      const session = await memory.createSession(markdown, url);
       return successResponse(
         res,
         "AI Scraper completed successfully",
         {
-          content: output,
+          ...output,
           sesionId: session,
           inputTokens,
           outputTokens,
@@ -506,12 +458,6 @@ export async function identifyContent(req: Request, res: Response) {
         200,
       );
     }
-    return errorResponse(
-      res,
-      "Internal server error",
-      "Error parsing output",
-      500,
-    );
   } catch (error: any) {
     console.error("Error", error);
     return errorResponse(res, "Internal server error", error?.message, 500);

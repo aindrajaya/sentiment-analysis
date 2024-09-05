@@ -1,14 +1,15 @@
 import { BaseListChatMessageHistory } from "@langchain/core/chat_history";
 
 import type { StoredMessage, BaseMessage } from "@langchain/core/messages";
+import { mapChatMessagesToStoredMessages } from "@langchain/core/messages";
 import {
-  mapChatMessagesToStoredMessages,
+  mapStoredMessageToChatMessage,
   mapStoredMessagesToChatMessages,
-} from "@langchain/core/messages";
+} from "./libs/utils.js";
 import { Collection, Document, ObjectId, PushOperator } from "mongodb";
 import { Document as ChainDoc } from "@langchain/core/documents";
 import { db } from "../../configs/databases/mongodb.db.js";
-import { UsageMetadata } from "../../modules/ai-scraper/types/interface.js";
+import { UsageMetadata } from "../langchain/callbacks/llm/types/interfacte.js";
 interface MongoDBChatMessageHistoryProps {
   sessionId?: string;
   userId: string;
@@ -48,6 +49,7 @@ interface MongoDBChatMessageHistoryProps {
 
 export interface ChatDocument extends Document {
   userId: string;
+  url: string;
   messages: StoredMessage[];
   pageContent: string;
   finalAnswer?: string;
@@ -97,10 +99,33 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
   // NOTE: still in consideration for the implementation
   searchSimilarMessages(messages: StoredMessage[], query: string) {}
 
-  async createSession(content: string) {
+  async getSessions() {
+    const documents = await this.collection
+      .find({ userId: this.userId })
+      .toArray();
+    const history = documents.map((doc) => {
+      return {
+        sessionId: doc._id.toString(),
+        name: doc.url,
+      };
+    });
+    return history;
+  }
+
+  async getChatHistory() {
+    const document = await this.collection.findOne({
+      userId: this.userId,
+      [this.idKey]: this.sessionId,
+    });
+    const messages = document?.messages || [];
+    return messages;
+  }
+
+  async createSession(content: string, url: string) {
     console.log("create session", this.collection);
     const session = await this.collection.insertOne({
       userId: this.userId,
+      url: url,
       messages: [],
       inputToken: 0,
       outputToken: 0,
@@ -160,7 +185,6 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
   }
 
   async getMessages() {
-    console.log("MASUK SINI");
     const document = await this.collection.findOne({
       userId: this.userId,
       [this.idKey]: this.sessionId,

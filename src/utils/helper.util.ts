@@ -10,8 +10,15 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { ObjectAny } from "../interfaces/general.i.js";
 import { NextFunction, Request, Response } from "express";
 import { encodingForModel, TiktokenModel } from "js-tiktoken";
-import { AiScraperV2BodyRequest } from "../modules/ai-scraper/types/interface.js";
+import { RunLogPatch } from "@langchain/core/tracers/log_stream";
+import {
+  AiScraperV2BodyRequest,
+  AiScraperV2BodyResponse,
+} from "../modules/ai-scraper/types/interface.js";
 import { platformApiUrl } from "../configs/general.config.js";
+import { ChatGenerationChunk } from "@langchain/core/outputs";
+import { AIMessageChunk } from "@langchain/core/messages";
+
 // ================== Req/Res Helper ===================
 function errorResponse<T>(
   res: Response,
@@ -29,6 +36,131 @@ function successResponse<T>(
   code: number = 200,
 ) {
   res.status(code).json({ success: true, message, data });
+}
+
+function streamResponse<T>(res: Response, data: T) {
+  res.write(data);
+}
+
+async function streamAIV2Response(
+  logStream: AsyncGenerator<RunLogPatch>,
+  callback: (data: AiScraperV2BodyResponse) => void,
+) {
+  let finalState;
+  let currentDesc = "";
+  let currentJson = "";
+  let currentStream = "";
+  for await (const chunk of logStream) {
+    if (!finalState) {
+      finalState = chunk;
+    } else {
+      finalState = finalState.concat(chunk);
+    }
+    // console.log("Agent Chunk:", JSON.stringify(chunk, null, 2));
+    if (
+      chunk.ops.length > 1 &&
+      chunk.ops[1].op == "add" &&
+      (chunk.ops[1].path == "/logs/ChatOpenAI:2/streamed_output/-" ||
+        chunk.ops[1].path == "/logs/ChatOpenAI/streamed_output/-")
+    ) {
+      const addOp = chunk.ops[1];
+      if (addOp.value instanceof ChatGenerationChunk) {
+        let content: string | undefined;
+        if (addOp.value.text != "") {
+          content = addOp.value.text;
+        } else if (addOp.value.message instanceof AIMessageChunk) {
+          content =
+            addOp.value.message.additional_kwargs.function_call?.arguments;
+        }
+
+        const data: AiScraperV2BodyResponse = {
+          desc: "",
+          json: "",
+        };
+        if (typeof content == "string") {
+          if (content.includes("desc")) {
+            currentStream = "desc";
+          } else if (content.includes("json")) {
+            currentStream = "json";
+          }
+
+          if (currentStream == "desc") {
+            currentDesc += content;
+            currentDesc = currentDesc
+              .replace("desc", "")
+              .replace(`desc":"`, "")
+              .replace(`":"`, "")
+              .replace(`"`, "")
+              .replace(`:`, "")
+              .replace(`","`, "")
+              .replace(`,"`, "");
+            data.desc = currentDesc;
+          } else if (currentStream == "json") {
+            currentJson += content;
+            data.desc = currentDesc;
+            if (currentJson.includes("```json")) {
+              const jsonContentMatch =
+                currentJson.match(/```json([\s\S]*?)```/);
+              if (!jsonContentMatch) {
+                const startIndex = currentJson.indexOf("```json");
+                data.json = currentJson.substring(startIndex);
+              } else {
+                data.json = "```json" + jsonContentMatch[1] + "```";
+              }
+            } else {
+              // console.log("current json", currentJson);
+              if (currentJson.includes(`json":"`)) {
+                const jsonContentMatch = currentJson.match(/json":"(.*)"/);
+                if (!jsonContentMatch) {
+                  const startIndex = currentJson.indexOf(`json":"`);
+                  data.json =
+                    "```json \n" +
+                    currentJson.substring(startIndex + 8) +
+                    "```";
+                } else {
+                  data.json =
+                    "```json" +
+                    jsonContentMatch[1]
+                      .replace(/\\"/g, '"')
+                      .replace(/\\\\/g, "\\") +
+                    "```";
+                }
+              }
+            }
+          }
+          callback(data);
+        }
+      }
+    } else if (
+      chunk.ops.length > 0 &&
+      chunk.ops[0].op == "replace" &&
+      chunk.ops[0].path == "/final_output"
+    ) {
+      const replaceOp = chunk.ops[0];
+      const content = replaceOp.value?.output;
+
+      if (content) {
+        console.log("content", content);
+        let result = { desc: "", json: "" };
+        try {
+          let { desc, json } =
+            typeof content == "string" ? JSON.parse(content) : content;
+          result.desc = desc;
+          json = json.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+          const jsonContentMatch = json.match(/```json([\s\S]*?)```/);
+          if (!jsonContentMatch) {
+            json = "```json" + json + "```";
+          }
+          result.json = json;
+        } catch (error) {
+          if (typeof content == "string") {
+            result.desc = content;
+          }
+        }
+        callback(result);
+      }
+    }
+  }
 }
 
 async function hookResponse<T>(
@@ -247,4 +379,6 @@ export {
   validate,
   socketValidate,
   validateToken,
+  streamResponse,
+  streamAIV2Response,
 };

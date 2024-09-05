@@ -1,6 +1,8 @@
 import * as marked from "marked";
 import { Document } from "@langchain/core/documents";
 
+import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
+
 export function tidyMarkdown(markdown: string): string {
   // Step 1: Handle complex broken links with text and optional images spread across multiple lines
   let normalizedMarkdown = markdown.replace(
@@ -124,4 +126,34 @@ export function customFormatMarkdownDocAsString(docs: Document[]) {
     result.add(final);
   }
   return Array.from(result).join("\n");
+}
+
+export interface MarkdownSplitterConfig {
+  semanticSplitter: [string, string][];
+  chunkSize: number;
+  chunkOverlap: number;
+}
+export async function markdownSplitter(
+  markdown: string,
+  config: MarkdownSplitterConfig = {
+    semanticSplitter: [
+      ["#", "Super Title"],
+      ["##", "Title"],
+      ["###", "Sub Title"],
+    ],
+    chunkSize: 2000,
+    chunkOverlap: 200,
+  },
+) {
+  const splitMarkdown = splitMarkdownByHeaders(
+    markdown,
+    config.semanticSplitter,
+  );
+  const splitter = new RecursiveCharacterTextSplitter({
+    chunkSize: 2000,
+    chunkOverlap: 200,
+  });
+  const docs = await splitter.splitDocuments(splitMarkdown);
+
+  return docs;
 }
