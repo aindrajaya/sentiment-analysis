@@ -56,6 +56,22 @@ const AiScraperSchemaGetChatHistory = z.object({
   }),
 });
 
+const AiScraperSchemaMigrateChatHistory = z.object({
+  params: z.object({
+    userId: z.string({
+      required_error: "User ID is required",
+    }),
+    sessionId: z.string({
+      required_error: "Session ID is required",
+    }),
+  }),
+  body: z.object({
+    newUserId: z.string({
+      required_error: "New User ID is required",
+    }),
+  }),
+});
+
 const AiIdentifierSchema = z.object({
   body: z.object({
     markdown: z.string({
@@ -80,6 +96,9 @@ const aiScraperV2GetSessionsValidation = validate(AiScraperSchemaGetSessions);
 const aiScraperV2GetChatHistoryValidation = validate(
   AiScraperSchemaGetChatHistory,
 );
+const aiScraperV2MigrateChatHistoryValidation = validate(
+  AiScraperSchemaMigrateChatHistory,
+);
 const aiFinalAnswerValidation = validate(AiScraperSchemaFinalAnswer);
 
 export {
@@ -90,4 +109,5 @@ export {
   aiFinalAnswerValidation,
   aiScraperV2GetSessionsValidation,
   aiScraperV2GetChatHistoryValidation,
+  aiScraperV2MigrateChatHistoryValidation,
 };
