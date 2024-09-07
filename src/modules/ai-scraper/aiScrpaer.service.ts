@@ -225,7 +225,7 @@ export async function askAiV2(
   streaming: boolean = true,
 ) {
   try {
-    const { task, userId, sessionId } = payload;
+    const { task, userId, sessionId, scraperId } = payload;
     const memory = new MongoDBChatMessageHistory({ userId, sessionId });
     const markdown = await memory.getPageContent();
     const docs = await markdownSplitter(markdown);
@@ -289,7 +289,7 @@ export async function askAiV2(
 
     if (streaming) {
       const logStream = await withHistory.streamLog({ input: task }, config);
-      await streamAIV2Response(logStream, callback);
+      await streamAIV2Response(logStream, callback, userId, sessionId, scraperId);
     } else {
       const result = await withHistory.invoke({ input: task }, config);
       console.log("Result", result);

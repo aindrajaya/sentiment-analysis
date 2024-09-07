@@ -15,9 +15,11 @@ import {
   AiScraperV2BodyRequest,
   AiScraperV2BodyResponse,
 } from "../modules/ai-scraper/types/interface.js";
-import { platformApiUrl } from "../configs/general.config.js";
+import { mrScraperWebhookSecret, mrScraperWebhookUrl, platformApiUrl } from "../configs/general.config.js";
 import { ChatGenerationChunk } from "@langchain/core/outputs";
 import { AIMessageChunk } from "@langchain/core/messages";
+import axios from "axios";
+import { MongoDBChatMessageHistory } from "./memory/chat_history.js";
 
 // ================== Req/Res Helper ===================
 function errorResponse<T>(
@@ -45,6 +47,9 @@ function streamResponse<T>(res: Response, data: T) {
 async function streamAIV2Response(
   logStream: AsyncGenerator<RunLogPatch>,
   callback: (data: AiScraperV2BodyResponse) => void,
+  userId: string,
+  sessionId: string,
+  scraperId: string,
 ) {
   let finalState;
   let currentDesc = "";
@@ -157,9 +162,29 @@ async function streamAIV2Response(
             result.desc = content;
           }
         }
+        await callMrScraperTokenWebhook(userId, sessionId, scraperId)
         callback(result);
       }
     }
+  }
+}
+
+async function callMrScraperTokenWebhook(
+  userId: string,
+  sessionId: string,
+  scraperId: string,
+) {
+  try {
+    const memory = new MongoDBChatMessageHistory({ userId, sessionId });
+    const finalAnswer = await memory.saveFinalAnswer();
+    await axios.post(mrScraperWebhookUrl!, {
+      scraper_id: +scraperId,
+      input_token: finalAnswer.inputToken,
+      output_token: finalAnswer.outputToken,
+      secret: mrScraperWebhookSecret,
+    });
+  } catch (error) {
+    console.error("Error", error);
   }
 }
 
