@@ -55,6 +55,7 @@ async function streamAIV2Response(
   let currentDesc = "";
   let currentJson = "";
   let currentStream = "";
+  let isDescDone = false;
   for await (const chunk of logStream) {
     if (!finalState) {
       finalState = chunk;
@@ -83,8 +84,9 @@ async function streamAIV2Response(
           json: "",
         };
         if (typeof content == "string") {
-          if (content.includes("desc")) {
+          if (content.includes("desc") && !isDescDone) {
             currentStream = "desc";
+            isDescDone = true;
           } else if (content.includes("json")) {
             currentStream = "json";
           }
