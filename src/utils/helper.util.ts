@@ -15,9 +15,11 @@ import {
   AiScraperV2BodyRequest,
   AiScraperV2BodyResponse,
 } from "../modules/ai-scraper/types/interface.js";
-import { platformApiUrl } from "../configs/general.config.js";
+import { platformApiUrl, platformWebhookSecret } from "../configs/general.config.js";
 import { ChatGenerationChunk } from "@langchain/core/outputs";
 import { AIMessageChunk } from "@langchain/core/messages";
+import axios from "axios";
+import { MongoDBChatMessageHistory } from "./memory/chat_history.js";
 
 // ================== Req/Res Helper ===================
 function errorResponse<T>(
@@ -45,11 +47,15 @@ function streamResponse<T>(res: Response, data: T) {
 async function streamAIV2Response(
   logStream: AsyncGenerator<RunLogPatch>,
   callback: (data: AiScraperV2BodyResponse) => void,
+  userId: string,
+  sessionId: string,
+  scraperId: string,
 ) {
   let finalState;
   let currentDesc = "";
   let currentJson = "";
   let currentStream = "";
+  let isDescDone = false;
   for await (const chunk of logStream) {
     if (!finalState) {
       finalState = chunk;
@@ -78,8 +84,9 @@ async function streamAIV2Response(
           json: "",
         };
         if (typeof content == "string") {
-          if (content.includes("desc")) {
+          if (content.includes("desc") && !isDescDone) {
             currentStream = "desc";
+            isDescDone = true;
           } else if (content.includes("json")) {
             currentStream = "json";
           }
@@ -157,9 +164,29 @@ async function streamAIV2Response(
             result.desc = content;
           }
         }
+        await callMrScraperTokenWebhook(userId, sessionId, scraperId)
         callback(result);
       }
     }
+  }
+}
+
+async function callMrScraperTokenWebhook(
+  userId: string,
+  sessionId: string,
+  scraperId: string,
+) {
+  try {
+    const memory = new MongoDBChatMessageHistory({ userId, sessionId });
+    const finalAnswer = await memory.saveFinalAnswer();
+    await axios.post(`${platformApiUrl}/scrape-gpt/token`, {
+      scraper_id: +scraperId,
+      input_token: finalAnswer.inputToken,
+      output_token: finalAnswer.outputToken,
+      secret: platformWebhookSecret,
+    });
+  } catch (error) {
+    console.error("Error", error);
   }
 }
 
@@ -226,6 +253,10 @@ async function validateToken(token: string) {
 
   const data = await res.json();
   console.log("result:", JSON.stringify(data, null, 2));
+
+  if (data.data.token_usage >= data.data.token_limit) {
+    return false;
+  }
 
   return true;
 }

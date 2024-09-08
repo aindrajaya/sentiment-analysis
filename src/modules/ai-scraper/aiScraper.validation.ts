@@ -23,6 +23,9 @@ const AiScraperSchemaV2 = z.object({
     task: z.string({
       required_error: "What data you need to scrape bro?",
     }),
+    scraperId: z.string({
+      required_error: "Scraper ID is required",
+    }),
   }),
 });
 

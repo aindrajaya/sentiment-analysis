@@ -81,9 +81,14 @@ export async function createReActAgent({
     if (message.additional_kwargs.function_call) {
       const { function_call } = message.additional_kwargs;
       try {
-        const toolInput = function_call.arguments
-          ? JSON.parse(function_call.arguments)
-          : {};
+        let toolInput = {};
+        try {
+          toolInput = function_call.arguments
+            ? JSON.parse(function_call.arguments)
+            : {};
+        } catch (error) {
+          toolInput = function_call.arguments ?? {};
+        }
         // If the function call name is `response` then we know it's used our final
         // response function and can return an instance of `AgentFinish`
         if (function_call.name === "response") {
@@ -103,9 +108,11 @@ export async function createReActAgent({
           messageLog: [message],
         };
       } catch (error) {
-        throw new Error(
-          `Failed to parse function arguments from chat model response. Text: "${function_call.arguments}". ${error}`,
-        );
+        console.error("Error parsing function call", error);
+        return {
+          returnValues: { output: message.content },
+          log: message.content,
+        };
       }
     } else {
       return {

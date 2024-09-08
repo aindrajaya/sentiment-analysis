@@ -15,6 +15,7 @@ export interface AiScraperV2BodyRequest {
   task: string;
   sessionId: string;
   userId: string;
+  scraperId: string;
 }
 
 export interface AiScraperV2FinalAnswerBodyRequest {

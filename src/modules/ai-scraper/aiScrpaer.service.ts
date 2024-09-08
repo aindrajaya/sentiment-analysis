@@ -226,10 +226,10 @@ export async function askAiV2(
   streaming: boolean = true,
 ) {
   try {
-    const { task, userId, sessionId } = payload;
+    let { task, userId, sessionId, scraperId } = payload;
     const memory = new MongoDBChatMessageHistory({ userId, sessionId });
-    const markdown = await memory.getPageContent();
-    const docs = await markdownSplitter(markdown);
+    const { pageContent, webPage } = await memory.getPageContent();
+    const docs = await markdownSplitter(pageContent);
     const countTokens = (usageMetadata: UsageMetadata) => {
       memory.addSessionUsageMetadata(usageMetadata);
     };
@@ -244,20 +244,20 @@ export async function askAiV2(
     const prompt = ChatPromptTemplate.fromMessages([
       [
         "system",
-        "You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape/get from available web content, you can use available tools that will help you to answer. If you have to return the data in json format, please make sure you return it with pretty json. \n !IMPORTANT Do not to give information that not included in the search result or history",
+        `You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape/get from available web content at ${webPage}, you can use available tools that will help you to answer. If you have to return the data in json format, please make sure you return it with pretty json. \n\n NOTE: Currently your in a beta version so you still in learning proccess to get better scraping data.`,
       ],
       new MessagesPlaceholder("chat_history"),
       ["user", "{input}"],
+      [
+        "system",
+        "!!IMPORTANT DO NOT TO GIVE: \n 1. Information that is not included in the search results or history.. \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. You can tell the user the data may not meet their needs, or inform them that ScrapeGPT is still in beta version, and our developers are working hard to improve its performance. \n\n !!IMPORTANT: \n PROVIDE: \n 1. Efficient answers \n 2. Clear explanations \n 3. Extra descriptions \n 4. Readable JSON format with unique entries (make sure there is no repeated data) \n 5. Relevance to the input \n 6. Follow-up questions at the end of the explanation e.g 'Do you want to know more about this?' or  'Which data do you want to scrape?'",
+      ],
       new MessagesPlaceholder("agent_scratchpad"),
     ]);
     const tools = [new SearchWebContentTool(docs)];
 
     const finalResponseSchema = z.object({
-      desc: z
-        .string()
-        .describe(
-          "The explanation of scraped data. \n !IMPORTANT: add extra description and clear explanation about data scraped. all answer must be efficient and easy to understand and related to input and you have to make sure data scraped is shown with your extra description with readable format not json format!.",
-        ),
+      desc: z.string().describe("The explanation of scraped data"),
       json: z
         .string()
         .describe(
@@ -290,7 +290,13 @@ export async function askAiV2(
 
     if (streaming) {
       const logStream = await withHistory.streamLog({ input: task }, config);
-      await streamAIV2Response(logStream, callback);
+      await streamAIV2Response(
+        logStream,
+        callback,
+        userId,
+        sessionId,
+        scraperId,
+      );
     } else {
       const result = await withHistory.invoke({ input: task }, config);
       console.log("Result", result);
@@ -378,9 +384,13 @@ export async function identifyContent(req: Request, res: Response) {
     const prompt = ChatPromptTemplate.fromMessages([
       [
         "system",
-        "You are an AI Scraper assistance build by MR Scraper, your task is to create the title for this web and tell user what data can be scraped from the web content given, please provide trully information what data can be scraped without any additional information that is no included in the web content user given.",
+        "You are an AI Scraper assistance build by MR Scraper, your task is to create the title for this web and tell user what data can be scraped from the web content given, please provide trully information what data can be scraped in readable format without any additional information that is no included in the web content user given. You should give an additional followup question to user at the end of exaplanation",
       ],
       ["user", "URL: {url},  Web Content: {input}"],
+      [
+        "system",
+        "!!IMPORTANT: \n PROVIDE: \n 1. Clear explanations with readable format!  \n  2. Follow-up questions to starting the conversation at the end of the explanation e.g 'Which data do you want to scrape? ",
+      ],
     ]);
 
     const extractorSchema = {
@@ -398,57 +408,20 @@ export async function identifyContent(req: Request, res: Response) {
             description:
               "information what data can be scraped without any additional information that is no included in the web content user given",
           },
+          followup: {
+            type: "string",
+            description:
+              "Follow-up questions to starting the conversation at the end of the explanation",
+          },
         },
       },
     };
     const parser = new JsonOutputFunctionsParser();
-    const llmCallback = BaseCallbackHandler.fromMethods({
-      handleLLMStart(
-        llm: Serialized,
-        prompts: string[],
-        runId: string,
-        parentRunId?: string,
-        extraParams?: Record<string, unknown>,
-        tags?: string[],
-        metadata?: Record<string, unknown>,
-        runName?: string,
-      ) {
-        console.log("handleLLMStart: LLM:", { llm });
-        console.log("handleLLMStart: Prompt:", { prompts });
-        console.log("handleLLMStart: Metadata:", { metadata });
-      },
-      handleLLMEnd(
-        output: LLMResult,
-        runId: string,
-        parentRunId?: string,
-        tags?: string[],
-      ) {
-        if (output) {
-          console.log(
-            "handleLLMEnd: Output:",
-            JSON.stringify({ ...output.generations[0][0].message }, null, 2),
-          );
-          const usageMetadata =
-            output.generations[0][0].message?.kwargs?.usage_metadata ||
-            output.generations[0][0].message?.usage_metadata;
-          if (usageMetadata) {
-            console.log("handleLLMEnd: Usage Metadata:", { usageMetadata });
-            const { input_tokens, output_tokens } = usageMetadata;
-            inputTokens += input_tokens;
-            outputTokens += output_tokens;
-          }
-        }
-      },
-      handleChainStart(chain) {
-        console.log("handleChainStart: I'm the second handler!!", { chain });
-      },
-      handleAgentAction(action) {
-        console.log("handleAgentAction", action);
-      },
-      handleToolStart(tool) {
-        console.log("handleToolStart", { tool });
-      },
-    });
+    const countTokens = (usageMetadata: UsageMetadata) => {
+      inputTokens += usageMetadata.input_tokens;
+      outputTokens += usageMetadata.output_tokens;
+    };
+    const llmCallback = openAICallbackHandler(true, countTokens);
     const chatModel = new ChatOpenAI({
       model: "gpt-4o-mini",
       temperature: 0,
