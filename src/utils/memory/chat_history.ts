@@ -135,7 +135,6 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
     return updated.modifiedCount > 0;
   }
   async createSession(content: string, url: string) {
-    console.log("create session", this.collection);
     const session = await this.collection.insertOne({
       userId: this.userId,
       url: url,
@@ -186,7 +185,8 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
     const pageContent =
       document?.pageContent ||
       "Something went wrong while fetching the page content, please try to scrape again.";
-    return pageContent;
+    const webPage = document?.url;
+    return { pageContent, webPage };
   }
 
   async getMetadata() {
