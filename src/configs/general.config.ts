@@ -11,9 +11,9 @@ const xClientSecret = process.env.X_CLIENTSECRET;
 const mongoUri = process.env.MONGO_URI;
 const xCallbackUrl = process.env.APP_URL + "/integration/x/oauth2-callback";
 const platformApiUrl = process.env.PLATFORM_API_URL;
-const mrScraperWebhookSecret = process.env.MRSCRAPER_WEBHOOK_SECRET;
-const mrScraperWebhookUrl = process.env.MRSCRAPER_WEBHOOK_URL;
+const platformWebhookSecret = process.env.PLATFORM_WEBHOOK_SECRET;
 export {
+  platformWebhookSecret,
   platformApiUrl,
   apiKey,
   port,
@@ -26,6 +26,4 @@ export {
   xClientId,
   xClientSecret,
   xCallbackUrl,
-  mrScraperWebhookSecret,
-  mrScraperWebhookUrl,
 };

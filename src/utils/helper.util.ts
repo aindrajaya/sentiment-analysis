@@ -15,7 +15,7 @@ import {
   AiScraperV2BodyRequest,
   AiScraperV2BodyResponse,
 } from "../modules/ai-scraper/types/interface.js";
-import { mrScraperWebhookSecret, mrScraperWebhookUrl, platformApiUrl } from "../configs/general.config.js";
+import { platformApiUrl, platformWebhookSecret } from "../configs/general.config.js";
 import { ChatGenerationChunk } from "@langchain/core/outputs";
 import { AIMessageChunk } from "@langchain/core/messages";
 import axios from "axios";
@@ -177,11 +177,11 @@ async function callMrScraperTokenWebhook(
   try {
     const memory = new MongoDBChatMessageHistory({ userId, sessionId });
     const finalAnswer = await memory.saveFinalAnswer();
-    await axios.post(mrScraperWebhookUrl!, {
+    await axios.post(`${platformApiUrl}/scrape-gpt/token`, {
       scraper_id: +scraperId,
       input_token: finalAnswer.inputToken,
       output_token: finalAnswer.outputToken,
-      secret: mrScraperWebhookSecret,
+      secret: platformWebhookSecret,
     });
   } catch (error) {
     console.error("Error", error);
@@ -251,6 +251,10 @@ async function validateToken(token: string) {
 
   const data = await res.json();
   console.log("result:", JSON.stringify(data, null, 2));
+
+  if (data.data.token_usage >= data.data.token_limit) {
+    return false;
+  }
 
   return true;
 }
