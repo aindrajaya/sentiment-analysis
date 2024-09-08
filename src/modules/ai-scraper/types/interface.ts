@@ -32,6 +32,10 @@ export interface AiScraperV2GetChatHistoryParamsRequest {
   sessionId: string;
 }
 
+export interface AiScraperV2MigrateChatHistoryBodyRequest {
+  newUserId: string;
+}
+
 export interface AiScraperBodyResponse {
   task: string;
   json: string;
