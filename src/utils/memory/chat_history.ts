@@ -120,7 +120,20 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
     const messages = document?.messages || [];
     return messages;
   }
-
+  async updateSessionOwnership(newOwner: string) {
+    const updated = await this.collection.updateOne(
+      {
+        userId: this.userId,
+        [this.idKey]: this.sessionId,
+      },
+      {
+        $set: {
+          userId: newOwner,
+        },
+      },
+    );
+    return updated.modifiedCount > 0;
+  }
   async createSession(content: string, url: string) {
     console.log("create session", this.collection);
     const session = await this.collection.insertOne({

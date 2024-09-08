@@ -45,6 +45,7 @@ import {
   AiScraperV2GetChatHistoryParamsRequest,
   AiScraperV2GetSessionsBodyResponse,
   AiScraperV2GetSessionsParamsRequest,
+  AiScraperV2MigrateChatHistoryBodyRequest,
 } from "./types/interface.js";
 import {
   LLMResult,
@@ -333,6 +334,25 @@ export async function getChatHistory(req: Request, res: Response) {
     return successResponse(res, "Hi, welcome back!", result, 200);
   } catch (error: any) {
     console.error("Error", error);
+    return errorResponse(res, "Internal server error", error?.message, 500);
+  }
+}
+
+export async function migrateChatHistory(req: Request, res: Response) {
+  try {
+    const { userId, sessionId } =
+      req.params as unknown as AiScraperV2GetChatHistoryParamsRequest;
+    const { newUserId } =
+      req.body as unknown as AiScraperV2MigrateChatHistoryBodyRequest;
+    const memory = new MongoDBChatMessageHistory({ userId, sessionId });
+    const result = await memory.updateSessionOwnership(newUserId);
+    return successResponse(
+      res,
+      "Session migrated successfully",
+      { isUpdated: result },
+      200,
+    );
+  } catch (error: any) {
     return errorResponse(res, "Internal server error", error?.message, 500);
   }
 }

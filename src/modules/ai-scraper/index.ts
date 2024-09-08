@@ -4,6 +4,7 @@ import {
   aiIdentifierValidation,
   aiScraperV2GetChatHistoryValidation,
   aiScraperV2GetSessionsValidation,
+  aiScraperV2MigrateChatHistoryValidation,
   aiScraperValidation,
   apiAiScraperV2Validation,
 } from "./aiScraper.validation.js";
@@ -13,6 +14,7 @@ import {
   getChatHistory,
   getSessions,
   identifyContent,
+  migrateChatHistory,
   saveFinalAnswer,
 } from "./aiScrpaer.service.js";
 import { successResponse } from "../../utils/helper.util.js";
@@ -39,6 +41,11 @@ aiRouter.get(
   "/v2/chat-history/:userId/:sessionId",
   aiScraperV2GetChatHistoryValidation,
   getChatHistory,
+);
+aiRouter.put(
+  "/v2/migrate/:userId/:sessionId",
+  aiScraperV2MigrateChatHistoryValidation,
+  migrateChatHistory,
 );
 aiRouter.post("/identify", aiIdentifierValidation, identifyContent);
 
