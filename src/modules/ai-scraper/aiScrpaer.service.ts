@@ -389,7 +389,7 @@ export async function identifyContent(req: Request, res: Response) {
       ["user", "URL: {url},  Web Content: {input}"],
       [
         "system",
-        "!!IMPORTANT: \n PROVIDE: \n 1. Clear explanations with readable format!  \n  2. Follow-up questions to starting the conversation at the end of the explanation e.g 'Which data do you want to scrape? ",
+        "!!IMPORTANT: \n PROVIDE: \n 1. Clear explanations with READABLE format!  \n  2. Follow-up questions to starting the conversation at the end of the explanation e.g 'Which data do you want to scrape? 3. Explanation How many data that can be scraped ",
       ],
     ]);
 
@@ -412,6 +412,10 @@ export async function identifyContent(req: Request, res: Response) {
             type: "string",
             description:
               "Follow-up questions to starting the conversation at the end of the explanation",
+          },
+          howMany: {
+            type: "string",
+            description: "Explanation How many data that can be scraped",
           },
         },
       },
