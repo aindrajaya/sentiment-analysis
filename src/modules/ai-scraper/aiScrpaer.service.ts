@@ -274,7 +274,7 @@ export async function askAiV2(
     const runnable = new AgentExecutor({
       agent,
       tools,
-      // verbose: true,
+      verbose: true,
     });
     const withHistory = new ChainWithMessageHistory({
       runnable,
