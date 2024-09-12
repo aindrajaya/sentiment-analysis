@@ -12,6 +12,7 @@ import {
   askAi,
   askAiV2,
   getChatHistory,
+  getConversationTokenUsage,
   getSessions,
   identifyContent,
   migrateChatHistory,
@@ -41,6 +42,11 @@ aiRouter.get(
   "/v2/chat-history/:userId/:sessionId",
   aiScraperV2GetChatHistoryValidation,
   getChatHistory,
+);
+aiRouter.get(
+  "/v2/token-usage/:userId/:sessionId",
+  aiScraperV2GetChatHistoryValidation,
+  getConversationTokenUsage,
 );
 aiRouter.put(
   "/v2/migrate/:userId/:sessionId",
