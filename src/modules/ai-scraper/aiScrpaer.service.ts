@@ -375,15 +375,16 @@ export async function identifyContent(req: Request, res: Response) {
         "system",
         `FORMAT INSTRUCTIONS! 
 Analyze the image given by user, identify the problem as below:
-1. What is the problem? (proxy_error, bot_detected, auth_required) with snake case (e.g. bot_detected)
-2. What is the solution? 
+1. Title for the problem (e.g. Proxy Error, Bot Detected, Auth Required)
+2. What is the problem? (proxy_error, bot_detected, auth_required) with snake case (e.g. bot_detected)
+3. What is the solution? 
   a. if the problem is proxy_error, the solution is to use a different proxy. (proxy)
   b. if the problem is bot_detected, the solution is to use a different proxy also, because the current proxy is detected as a bot. (proxy)
   c. if the problem is auth_required, the solution is to login to the website. (login)
-3. How to solve the problem?  
+4. How to solve the problem?  
   a. if the solution is to use a different proxy, suggest user to use user best custom proxy provider if available or try again the scraping (important to give step by step with Readable list format).
   b. if the solution is to login to the website, provide the step to login to the website (important to give step by step with Readable format).
-4. What is the impact of the problem? (e.g. can't scrape data, can't login)`,
+5. What is the impact of the problem? (e.g. can't scrape data, can't login)`,
       ];
       extractorSchema = {
         name: "extractor",
@@ -391,6 +392,10 @@ Analyze the image given by user, identify the problem as below:
         parameters: {
           type: "object",
           properties: {
+            title: {
+              type: "string",
+              description: "The title for the problem",
+            },
             problem: {
               type: "string",
               description: "The problem",
