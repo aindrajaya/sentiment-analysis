@@ -120,6 +120,16 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
     const messages = document?.messages || [];
     return messages;
   }
+  async getConversationTokenUsage() {
+    const document = await this.collection.findOne({
+      userId: this.userId,
+      [this.idKey]: this.sessionId,
+    });
+    return {
+      inputTokens: document?.inputToken || 0,
+      outputTokens: document?.outputToken || 0,
+    };
+  }
   async updateSessionOwnership(newOwner: string) {
     const updated = await this.collection.updateOne(
       {
