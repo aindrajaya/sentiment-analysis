@@ -87,11 +87,24 @@ export async function createReActAgent({
             ? JSON.parse(function_call.arguments)
             : {};
         } catch (error) {
-          toolInput = function_call.arguments ?? {};
+          const args = function_call.arguments ?? {};
+          toolInput = "";
+          Object.keys(args).forEach((key: any) => {
+            if (typeof args[key] === "string") {
+              toolInput += args[key];
+            }
+          });
+          console.error("Error parsing function call arguments", error);
         }
         // If the function call name is `response` then we know it's used our final
         // response function and can return an instance of `AgentFinish`
         if (function_call.name === "response") {
+          if (typeof toolInput === "string") {
+            return {
+              returnValues: { output: { desc: toolInput } },
+              log: toolInput,
+            };
+          }
           return {
             returnValues: {
               output: { ...toolInput, usage_metadata: message.usage_metadata },

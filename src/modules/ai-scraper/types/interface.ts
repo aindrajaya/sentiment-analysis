@@ -9,6 +9,9 @@ export interface AiIdentifierBodyRequest {
   url: string;
   markdown: string;
   userId: string;
+  isError: boolean;
+  httpStatus: number;
+  screenshot: string;
 }
 
 export interface AiScraperV2BodyRequest {
