@@ -9,16 +9,16 @@ import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
 import { FaissStore } from "@langchain/community/vectorstores/faiss";
 import { RunnableConfig } from "@langchain/core/runnables";
 import { AgentExecutor } from "langchain/agents";
+import type { BaseMessagePromptTemplateLike } from "@langchain/core/prompts";
+import type { InputValues } from "@langchain/core/utils/types";
 import {
   ChatPromptTemplate,
   MessagesPlaceholder,
 } from "@langchain/core/prompts";
-import { ChatGenerationChunk } from "@langchain/core/outputs";
-import { AIMessageChunk } from "@langchain/core/messages";
 import { JsonOutputParser } from "@langchain/core/output_parsers";
-import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
-import { Serialized } from "@langchain/core/load/serializable";
 import { JsonOutputFunctionsParser } from "langchain/output_parsers";
+import { FunctionDefinition } from "@langchain/core/language_models/base";
+
 // ================== Internal libs =====================
 import { MongoDBChatMessageHistory } from "../../utils/memory/chat_history.js";
 import {
@@ -149,77 +149,6 @@ export async function askAi(req: Request, res: Response) {
 }
 
 // HACK: Ask AI V2 is an improved version of the Ask AI function to make the result more accurate and improve user experience with the conversation.
-// NOTE: PIPELINE: ETL process -> vectorization -> similiarity search -> reranking -> agent
-// TODO: create an agent to handle the conversation with the user and stream the process.
-// AGENT Type: ReAct (Reasoning and Action)
-// AGENT PIPELINE: QUERY -> Thought -> Action -> Action Input -> Observation -> Repeat if needed -> Final Answer
-// AGENT Description:
-// the agent is responsible for handling the conversation with the user search/read/write memory, thought process, and decision making, agent will have some tools can use to give best answer for user.
-// AGENT Tools:
-// 1. Manage memory search/read/write memory data.
-// 2. Summerize the conversation with the user.
-// 3. Combinator for combine new similiar document with previous documents used in the conversation.
-// 4. Search related documents with user query. (eg. in previous conversation ai answered a question about a specific topic, the user can ask the ai to provide more information about the topic)
-//
-//
-// PIPELINE Starting Conversation +  Indetification + Starting conversation: lambda (loading...) -> scraper -> create session -> {userId, markdown, sessionId} mrscrper -> chat open ai -> indentifcation
-// PIPELINE Conversation (Stream): mrscraper {task, userId, sessionId} <-> agent
-//
-// {desc: "a"}
-// {desc: "a is"}
-// {desc: "a is for", result: '```json {a: } ```'}
-// {desc: "a is for apple", result '```json {a: apple } ```}
-//
-//
-/** HACK: SOME DATA SCHEMA DETAILS:
-    AI Answer Schema
-    - descritption: "the answer"
-    - result: "```json JSON_RESULT ```"
-    Memory schema
-    - userId: the user id
-    - sessionId: unique id for the user session
-    - chatHistory: chat history for the user session
-    - - chatHistory schema
-    - - - id: unique id for the chat message
-    - - - query: the message sent by the user
-    - - - aiAnswer: the answer from the ai {descritption: "the answer",result: "```json JSON_RESULT ```"}
-    - - - documentUsed: the documents from chunk of pageContent used in the conversation
-    - - - oToken: 
-    - - - iToken:
-    - aiFinalAnswer: ai answer that has confirmed by the user in json string format {descritption: "the answer",result: "```json JSON_RESULT ```"}
-    - pageContent: the documents used in the conversation
-    - documents: chunk of pageContent
-    - totalInputToken: total token used in the conversation
-    - totalOutputToken: total token used in the conversation
-**/
-
-/** HACK: Manage Memory Tool DETAILS:
- *   Ref: https://js.langchain.com/v0.1/docs/integrations/chat_memory/mongodb/
- *   PARAMS: userId, sessionId
- *   Functions:
- *   1. getMemory: get the memory for the user session if exists, if not exists create a new memory.
- *   2. saveMemory: save the memory for the user session.
- *   3. searchMemory: search top N chat history that related to the user query.
- **/
-
-/** HACK: Search Tool DETAILS:
- *    Ref: previous approuch
- *   PARAMS: q, documents
- *   Functions:
- *   1. similiarySearch:  search top N similiar documents for the user query.
- *   2. rerank: rerank the search results for better results.
- **/
-
-/** HACK: Combinator Tool DETAILS:
- *   Ref: https://js.langchain.com/v0.1/docs/modules/data_connection/document_loaders/custom/
- *   PARAMS: documents, newDocument
- *   Functions:
- *   1. combine: combine newDocument with documents and return the combined documents.
- *   2. combineAndSplit: combine newDocument with documents and split the combined documents into chunks.
- **/
-
-// NOTE: the agent will stream the progress and the final answer to the user.
-// FOR Streaming reference: https://js.langchain.com/v0.1/docs/modules/agents/how_to/streaming/
 export async function askAiV2(
   payload: AiScraperV2BodyRequest,
   callback: (response: AiScraperV2BodyResponse) => void,
@@ -377,23 +306,26 @@ export async function saveFinalAnswer(req: Request, res: Response) {
 
 export async function identifyContent(req: Request, res: Response) {
   try {
-    const { markdown, userId, url } = req.body as AiIdentifierBodyRequest;
+    const { markdown, userId, url, screenshot, isError, httpStatus } =
+      req.body as AiIdentifierBodyRequest;
     const context = limitTokens(markdown, 125_000);
     let inputTokens = 0;
     let outputTokens = 0;
-    const prompt = ChatPromptTemplate.fromMessages([
-      [
-        "system",
-        "You are an AI Scraper assistance build by MR Scraper, your task is to create the title for this web and tell user what data can be scraped from the web content given, please provide trully information what data can be scraped in readable format without any additional information that is no included in the web content user given. You should give an additional followup question to user at the end of exaplanation",
-      ],
-      ["user", "URL: {url},  Web Content: {input}"],
-      [
-        "system",
-        "!!IMPORTANT: \n PROVIDE: \n 1. Clear explanations with READABLE format!  \n  2. Follow-up questions to starting the conversation at the end of the explanation e.g 'Which data do you want to scrape? 3. Explanation How many data that can be scraped ",
-      ],
-    ]);
-
-    const extractorSchema = {
+    let user:
+      | ChatPromptTemplate<InputValues, string>
+      | BaseMessagePromptTemplateLike = [
+      "user",
+      `URL: {url},  Web Content: {input}`,
+    ];
+    let system1: BaseMessagePromptTemplateLike = [
+      "system",
+      "You are an AI Scraper assistance build by MR Scraper, your task is to create the title for this web and tell user what data can be scraped from the web content given, please provide trully information what data can be scraped in readable format without any additional information that is no included in the web content user given. You should give an additional followup question to user at the end of exaplanation",
+    ];
+    let systemGuard: BaseMessagePromptTemplateLike = [
+      "system",
+      "!!IMPORTANT: \n PROVIDE: \n 1. Clear explanations with READABLE format!  \n  2. Follow-up questions to starting the conversation at the end of the explanation e.g 'Which data do you want to scrape? 3. Explanation How many data that can be scraped",
+    ];
+    let extractorSchema: FunctionDefinition = {
       name: "extractor",
       description: "Extracts fields from the input.",
       parameters: {
@@ -420,6 +352,71 @@ export async function identifyContent(req: Request, res: Response) {
         },
       },
     };
+    if (isError) {
+      system1 = [
+        "system",
+        "You are an AI Scraper assistance build by MR Scraper, your task is to analyze user problem when do a scraping, you should provide the solution to the user problem from the image given",
+      ];
+      user = [
+        "user",
+        // @ts-ignore
+        [
+          {
+            type: "text",
+            text: "I have a problem with the scraping i got this http status code: {httpStatus}, and this my web look like:",
+          },
+          {
+            type: "image_url",
+            image_url: "data:image/jpeg;base64,{screenshot}",
+          },
+        ],
+      ];
+      systemGuard = [
+        "system",
+        `FORMAT INSTRUCTIONS! 
+Analyze the image given by user, identify the problem as below:
+1. What is the problem? (proxy_error, bot_detected, auth_required) with snake case (e.g. bot_detected)
+2. What is the solution? 
+  a. if the problem is proxy_error, the solution is to use a different proxy. (proxy)
+  b. if the problem is bot_detected, the solution is to use a different proxy also, because the current proxy is detected as a bot. (proxy)
+  c. if the problem is auth_required, the solution is to login to the website. (login)
+3. How to solve the problem?  
+  a. if the solution is to use a different proxy, suggest user to use user best custom proxy provider if available or try again the scraping (important to give step by step with Readable list format).
+  b. if the solution is to login to the website, provide the step to login to the website (important to give step by step with Readable format).
+4. What is the impact of the problem? (e.g. can't scrape data, can't login)`,
+      ];
+      extractorSchema = {
+        name: "extractor",
+        description: "Extracts fields from the input.",
+        parameters: {
+          type: "object",
+          properties: {
+            problem: {
+              type: "string",
+              description: "The problem",
+            },
+            solution: {
+              type: "string",
+              description: "The solution for the problem",
+            },
+            howTo: {
+              type: "string",
+              description: "Step to solve the problem",
+            },
+            impact: {
+              type: "string",
+              description: "Explanation of the impact of the problem",
+            },
+          },
+        },
+      };
+    }
+    const prompt = ChatPromptTemplate.fromMessages([
+      system1,
+      user,
+      systemGuard,
+    ]);
+
     const parser = new JsonOutputFunctionsParser();
     const countTokens = (usageMetadata: UsageMetadata) => {
       inputTokens += usageMetadata.input_tokens;
@@ -435,7 +432,12 @@ export async function identifyContent(req: Request, res: Response) {
       callbacks: [llmCallback],
     });
     const llmChain = prompt.pipe(chatModel).pipe(parser);
-    const result = await llmChain.invoke({ input: context, url });
+    let result;
+    if (!isError) {
+      result = await llmChain.invoke({ input: context, url });
+    } else {
+      result = await llmChain.invoke({ screenshot, httpStatus });
+    }
     console.log("\nAnswer:\n", result);
     const output = result;
     console.log(`\n=======\nInput token usage: ${inputTokens}\n=======\n`);
