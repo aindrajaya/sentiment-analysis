@@ -15,7 +15,10 @@ import {
   AiScraperV2BodyRequest,
   AiScraperV2BodyResponse,
 } from "../modules/ai-scraper/types/interface.js";
-import { platformApiUrl, platformWebhookSecret } from "../configs/general.config.js";
+import {
+  platformApiUrl,
+  platformWebhookSecret,
+} from "../configs/general.config.js";
 import { ChatGenerationChunk } from "@langchain/core/outputs";
 import { AIMessageChunk } from "@langchain/core/messages";
 import axios from "axios";
@@ -46,7 +49,7 @@ function streamResponse<T>(res: Response, data: T) {
 
 async function streamAIV2Response(
   logStream: AsyncGenerator<RunLogPatch>,
-  callback: (data: AiScraperV2BodyResponse) => void,
+  callback: (data: AiScraperV2BodyResponse, isFinal: boolean) => void,
   userId: string,
   sessionId: string,
   scraperId: string,
@@ -135,7 +138,7 @@ async function streamAIV2Response(
               }
             }
           }
-          callback(data);
+          callback(data, false);
         }
       }
     } else if (
@@ -164,8 +167,8 @@ async function streamAIV2Response(
             result.desc = content;
           }
         }
-        await callMrScraperTokenWebhook(userId, sessionId, scraperId)
-        callback(result);
+        await callMrScraperTokenWebhook(userId, sessionId, scraperId);
+        callback(result, true);
       }
     }
   }
