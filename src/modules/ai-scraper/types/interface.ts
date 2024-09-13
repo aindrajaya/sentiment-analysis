@@ -60,6 +60,11 @@ export interface AiScraperV2GetSessionsBodyResponse {
   name: string;
 }
 
+export interface AiScraperV2TokenUsageBodyResponse {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export type AiScraperV2GetChatHistoryBodyResponse = StoredMessage[];
 
 export interface AiIdentifierBodyResponse {

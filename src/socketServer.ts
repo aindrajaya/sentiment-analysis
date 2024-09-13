@@ -30,8 +30,9 @@ export default function socketServer(io: Server) {
       if (!status) {
         io.to(socket.id).emit("conversation-error", message);
       } else {
-        await askAiV2(payload, (res) => {
-          io.to(socket.id).emit("answer-ai-v2", res);
+        await askAiV2(payload, (res, isFinal) => {
+          const response = { ...res, isFinal };
+          io.to(socket.id).emit("answer-ai-v2", response);
         });
       }
     });
