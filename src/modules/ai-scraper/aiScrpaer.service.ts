@@ -46,6 +46,7 @@ import {
   AiScraperV2GetSessionsBodyResponse,
   AiScraperV2GetSessionsParamsRequest,
   AiScraperV2MigrateChatHistoryBodyRequest,
+  AiScraperV2TokenUsageBodyResponse,
 } from "./types/interface.js";
 import {
   LLMResult,
@@ -222,7 +223,7 @@ export async function askAi(req: Request, res: Response) {
 // FOR Streaming reference: https://js.langchain.com/v0.1/docs/modules/agents/how_to/streaming/
 export async function askAiV2(
   payload: AiScraperV2BodyRequest,
-  callback: (response: AiScraperV2BodyResponse) => void,
+  callback: (response: AiScraperV2BodyResponse, isFinal: boolean) => void,
   streaming: boolean = true,
 ) {
   try {
@@ -274,7 +275,7 @@ export async function askAiV2(
     const runnable = new AgentExecutor({
       agent,
       tools,
-      // verbose: true,
+      verbose: true,
     });
     const withHistory = new ChainWithMessageHistory({
       runnable,
@@ -300,14 +301,20 @@ export async function askAiV2(
     } else {
       const result = await withHistory.invoke({ input: task }, config);
       console.log("Result", result);
-      callback({ desc: result?.output?.desc, json: result?.output?.json });
+      callback(
+        { desc: result?.output?.desc, json: result?.output?.json },
+        true,
+      );
     }
   } catch (error: any) {
     console.error("Error", error);
-    callback({
-      desc: "Ups, something went wrong.",
-      json: `\`\`\`json {error: "${error?.message}" } \`\`\``,
-    });
+    callback(
+      {
+        desc: "Ups, something went wrong.",
+        json: `\`\`\`json {error: "${error?.message}" } \`\`\``,
+      },
+      true,
+    );
   }
 }
 
@@ -338,6 +345,20 @@ export async function getChatHistory(req: Request, res: Response) {
     const result: AiScraperV2GetChatHistoryBodyResponse =
       await memory.getChatHistory();
     return successResponse(res, "Hi, welcome back!", result, 200);
+  } catch (error: any) {
+    console.error("Error", error);
+    return errorResponse(res, "Internal server error", error?.message, 500);
+  }
+}
+
+export async function getConversationTokenUsage(req: Request, res: Response) {
+  try {
+    const { userId, sessionId } =
+      req.params as unknown as AiScraperV2GetChatHistoryParamsRequest;
+    const memory = new MongoDBChatMessageHistory({ userId, sessionId });
+    const result: AiScraperV2TokenUsageBodyResponse =
+      await memory.getConversationTokenUsage();
+    return successResponse(res, "success", result, 200);
   } catch (error: any) {
     console.error("Error", error);
     return errorResponse(res, "Internal server error", error?.message, 500);
