@@ -83,18 +83,20 @@ const AiIdentifierSchema = z.object({
       .url({ message: "Invalid URL" }),
   }),
 });
+const typeSchema = z.enum(["object", "array", "string", "number", "boolean"], {
+  required_error: "Type is required",
+  invalid_type_error:
+    "Type must be in object, array, string, number, boolean types",
+});
+
 const propertiesSchema = z.record(
   z.string().nonempty({ message: "Key is required" }),
   z
     .object({
-      type: z.string({
-        required_error: "Type is required",
+      type: typeSchema,
+      description: z.string({
+        required_error: "Description is required",
       }),
-      description: z
-        .string({
-          required_error: "Description is required",
-        })
-        .optional(),
       properties: z
         .record(
           z.string().nonempty({ message: "Key is required" }),
@@ -113,11 +115,9 @@ const propertiesSchema = z.record(
           type: z.string({
             required_error: "Type is required",
           }),
-          description: z
-            .string({
-              required_error: "Description is required",
-            })
-            .optional(),
+          description: z.string({
+            required_error: "Description is required",
+          }),
           properties: z
             .record(
               z.string().nonempty({ message: "Key is required" }),
@@ -147,6 +147,16 @@ const propertiesSchema = z.record(
           code: z.ZodIssueCode.custom,
           message: "Items is required for array type",
         });
+      } else if (value.type !== "object" && value.properties) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Properties is not allowed for non-object type",
+        });
+      } else if (value.type !== "array" && value.items) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Items is not allowed for non-array type",
+        });
       }
       if (value.required && value.properties) {
         for (const key of value.required) {
@@ -170,10 +180,6 @@ const propertiesSchema = z.record(
       }
     }),
 );
-const typeSchema = z.enum(["object", "array", "string", "number", "boolean"], {
-  required_error: "Type is required",
-  invalid_type_error: "Type must be either object or array",
-});
 const itemsSchema = z
   .object({
     type: typeSchema,
@@ -205,13 +211,23 @@ const itemsSchema = z
         code: z.ZodIssueCode.custom,
         message: "Properties is required for object type",
       });
-    }
-    if (value.type === "array" && !value.items) {
+    } else if (value.type === "array" && !value.items) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "Items is required for array type",
       });
+    } else if (value.type !== "object" && value.properties) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Properties is not allowed for non-object type",
+      });
+    } else if (value.type !== "array" && value.items) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Items is not allowed for non-array type",
+      });
     }
+
     if (value.items && value.items.type === "object") {
       for (const key of Object.keys(value.items.properties!)) {
         if (value.items.required && !value.items.required.includes(key)) {
@@ -239,6 +255,8 @@ const AiScraperApiSchema = z.object({
       markdown: z.string({
         required_error: "Markdown is required",
       }),
+      min: z.number().optional().default(1),
+      max: z.number().optional().default(1),
       schema: z.object({
         type: typeSchema,
         items: itemsSchema.optional(),
@@ -256,6 +274,16 @@ const AiScraperApiSchema = z.object({
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: "Properties is required for object schema",
+        });
+      } else if (schema.type !== "object" && schema.properties) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Properties is not allowed for non-object schema",
+        });
+      } else if (schema.type !== "array" && schema.items) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Items is not allowed for non-array schema",
         });
       }
       if (schema.required && schema.properties) {
