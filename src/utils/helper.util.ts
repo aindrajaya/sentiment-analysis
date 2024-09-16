@@ -276,6 +276,7 @@ function validate(scheme: z.ZodSchema<object>) {
       return next();
     } catch (error: any) {
       if (error instanceof z.ZodError) {
+        console.log("Validation Error: ", error);
         return errorResponse(res, error.errors[0].message, null, 400);
       }
       return errorResponse(res, "Internal server error", error?.message, 500);
