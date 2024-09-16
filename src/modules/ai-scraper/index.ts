@@ -2,6 +2,7 @@ import * as express from "express";
 import {
   aiFinalAnswerValidation,
   aiIdentifierValidation,
+  aiScraperApiValidation,
   aiScraperV2GetChatHistoryValidation,
   aiScraperV2GetSessionsValidation,
   aiScraperV2MigrateChatHistoryValidation,
@@ -10,6 +11,7 @@ import {
 } from "./aiScraper.validation.js";
 import {
   askAi,
+  askAIAPI,
   askAiV2,
   getChatHistory,
   getSessions,
@@ -31,6 +33,7 @@ aiRouter.post(
       false,
     ),
 );
+aiRouter.post("/v2/api", aiScraperApiValidation, askAIAPI);
 aiRouter.post("/v2/save-result", aiFinalAnswerValidation, saveFinalAnswer);
 aiRouter.get(
   "/v2/chat-history/:userId",
