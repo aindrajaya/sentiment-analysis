@@ -15,6 +15,7 @@ import type { InputValues } from "@langchain/core/utils/types";
 import {
   ChatPromptTemplate,
   MessagesPlaceholder,
+  PromptTemplate,
 } from "@langchain/core/prompts";
 import { JsonOutputParser } from "@langchain/core/output_parsers";
 import { JsonOutputFunctionsParser } from "langchain/output_parsers";
@@ -42,6 +43,9 @@ import { markdownSplitter } from "../../utils/etl/markdown.js";
 import jsonParser from "../../utils/etl/jsonParser.js";
 import {
   AiIdentifierBodyRequest,
+  AIItemsSchema,
+  AIOutputSchema,
+  AIPropertiesSchema,
   AiScraperApiBodyRequest,
   AiScraperBodyRequest,
   AiScraperV2BodyRequest,
@@ -322,22 +326,88 @@ export async function askAiV2(
   }
 }
 
+const convertPropertiesToCommaseparated = (
+  properties: AIPropertiesSchema,
+  min: number,
+  max: number,
+) => {
+  let prompt = "";
+  Object.keys(properties!).forEach((key, index) => {
+    if (properties[key].type === "object") {
+      prompt += convertPropertiesToCommaseparated(
+        properties[key].properties!,
+        min,
+        max,
+      );
+    } else if (properties[key].type === "array") {
+      prompt += `- ${key} with type ${properties[key].type} (${properties[key].description || ""})\n`;
+      prompt += convertItemsToCommaseparated(properties[key].items!, min, max);
+    } else {
+      prompt += `- ${key} with type ${properties![key].type} (${properties![key].description || ""})\n`;
+    }
+  });
+  return prompt;
+};
+
+const convertItemsToCommaseparated = (
+  items: AIItemsSchema,
+  min: number,
+  max: number,
+) => {
+  let prompt = "";
+  const type = `List ${items!.type == "object" ? "object" : ""}  (${items!.description}). Please provide the data with unique entries \nMINIMUM data: ${min ?? 1} \nMAXIMUM data: ${max ?? 1} \n`;
+  let detail = "";
+  if (items!.properties) {
+    detail += "Object properties:\n";
+    detail += convertPropertiesToCommaseparated(items!.properties!, min, max);
+  } else if (items!.items) {
+    prompt += convertItemsToCommaseparated(items!.items!, min, max);
+  }
+
+  prompt += `${type}\n${detail}\n`;
+
+  return prompt;
+};
+
+const convertSchemaToCommaSeparated = (
+  schema: AIOutputSchema,
+  min: number,
+  max: number,
+) => {
+  let prompt = "";
+  if (schema.type === "object") {
+    prompt += convertPropertiesToCommaseparated(schema.properties!, min, max);
+  } else if (schema.type === "array") {
+    prompt += ``;
+    prompt += convertItemsToCommaseparated(schema.items!, min, max);
+  } else {
+    prompt += `${schema.description} with type ${schema.type}\n`;
+  }
+
+  return prompt;
+};
+
 export async function askAIAPI(req: Request, res: Response) {
   try {
-    const { markdown, schema } = req.body as AiScraperApiBodyRequest;
+    const { markdown, schema, min, max } = req.body as AiScraperApiBodyRequest;
     const context = limitTokens(markdown, 125_000);
+    const schemaPrompt = convertSchemaToCommaSeparated(schema, min, max);
+    console.log("Schema Prompt", schemaPrompt);
     let inputTokens = 0;
     let outputTokens = 0;
     let user:
       | ChatPromptTemplate<InputValues, string>
-      | BaseMessagePromptTemplateLike = ["user", `Web Content: {input}`];
+      | BaseMessagePromptTemplateLike = [
+      "user",
+      `I need: \n--------------\n{user_want}\n--------------\n from this Web Content as many as possible : \n--------------\n{input}\n--------------\n`,
+    ];
     let system1: BaseMessagePromptTemplateLike = [
       "system",
-      "You are an AI Scraper assistant built by MR Scraper. Your task is to extract web content to list product and return data in JSON format as given. Please ensure you return it in a pretty JSON format.",
+      "You are an AI Scraper assistant created by MR Scraper. Your role is to extract all available data as many as possible from the web content and provide it in a JSON format as per the user's request",
     ];
     let systemGuard: BaseMessagePromptTemplateLike = [
       "system",
-      "!!IMPORTANT DO NOT TO GIVE: \n 1. Information that is not included in the search results or history.. \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. \n\n !!IMPORTANT: \n PROVIDE: \n 1. Readable JSON format as given with unique entries (make sure there is no repeated data)",
+      "!!IMPORTANT DO NOT TO GIVE: \n 1. Information that is not included in web content \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. \n\n !!IMPORTANT: \n PROVIDE: \n 1. Readable JSON format as given with unique entries (make sure there is no repeated data)",
     ];
     const finalResponseSchema = eval(jsonSchemaToZod(schema));
     console.log(zodToJsonSchema(finalResponseSchema));
@@ -383,6 +453,7 @@ export async function askAIAPI(req: Request, res: Response) {
     try {
       result = await llmChain.invoke({
         input: context,
+        user_want: schemaPrompt,
         format_instructions: parser.getFormatInstructions(),
       });
     } catch (error: any) {
@@ -391,6 +462,11 @@ export async function askAIAPI(req: Request, res: Response) {
       const fixParser = OutputFixingParser.fromLLM(
         new ChatOpenAI({ temperature: 0, model: "gpt-4o-mini" }),
         parser,
+        {
+          prompt: PromptTemplate.fromTemplate(
+            "Instructions:\n--------------\n{instructions}\n--------------\nCompletion:\n--------------\n{completion}\n--------------\n\nAbove, the Completion did not satisfy the constraints given in the Instructions.\nError:\n--------------\n{error}\n--------------\n\nPlease try again. \n\n !IMPORTANT\n 1. Do not give data that not included in the completion (you can give an empty value with the same type laid out in the instructions) \n 2. Do Not Halucinate! \n 3. Only respond with an answer that satisfies the constraints laid out in the Instructions:",
+          ),
+        },
       );
       result = await fixParser.parse(answer);
       console.log("Fixed Result", result);
