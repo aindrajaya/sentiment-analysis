@@ -2,6 +2,7 @@
 import "dotenv/config";
 import { Request, Response } from "express";
 import { z } from "zod";
+import { jsonSchemaToZod } from "json-schema-to-zod";
 // ================= Langhchain libs ====================
 import { CohereRerank } from "@langchain/cohere";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
@@ -9,16 +10,21 @@ import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
 import { FaissStore } from "@langchain/community/vectorstores/faiss";
 import { RunnableConfig } from "@langchain/core/runnables";
 import { AgentExecutor } from "langchain/agents";
+import type { BaseMessagePromptTemplateLike } from "@langchain/core/prompts";
+import type { InputValues } from "@langchain/core/utils/types";
 import {
   ChatPromptTemplate,
   MessagesPlaceholder,
 } from "@langchain/core/prompts";
-import { ChatGenerationChunk } from "@langchain/core/outputs";
-import { AIMessageChunk } from "@langchain/core/messages";
 import { JsonOutputParser } from "@langchain/core/output_parsers";
-import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
-import { Serialized } from "@langchain/core/load/serializable";
 import { JsonOutputFunctionsParser } from "langchain/output_parsers";
+import { FunctionDefinition } from "@langchain/core/language_models/base";
+import { zodToJsonSchema } from "zod-to-json-schema";
+import {
+  StructuredOutputParser,
+  OutputFixingParser,
+} from "langchain/output_parsers";
+import { RunnableSequence } from "@langchain/core/runnables";
 // ================== Internal libs =====================
 import { MongoDBChatMessageHistory } from "../../utils/memory/chat_history.js";
 import {
@@ -34,9 +40,9 @@ import {
 } from "../../utils/etl/markdown.js";
 import { markdownSplitter } from "../../utils/etl/markdown.js";
 import jsonParser from "../../utils/etl/jsonParser.js";
-
 import {
   AiIdentifierBodyRequest,
+  AiScraperApiBodyRequest,
   AiScraperBodyRequest,
   AiScraperV2BodyRequest,
   AiScraperV2BodyResponse,
@@ -55,9 +61,7 @@ import {
 import { SearchWebContentTool } from "../../utils/langchain/tools/searchWebContent.js";
 import { createReActAgent } from "../../utils/langchain/agent/createReActAgent.js";
 import { ChainWithMessageHistory } from "../../utils/langchain/chain/chainWithHistory.js";
-import openAICallbackHandler from "../../utils/langchain/callbacks/llm/openAiCb.js";
-
-// NOTE: PIPELINE: ETL process -> vectorization -> similiarity search -> reranking -> chat ai -> output parser
+import openAICallbackHandler from "../../utils/langchain/callbacks/llm/openAiCb.js"; // NOTE: PIPELINE: ETL process -> vectorization -> similiarity search -> reranking -> chat ai -> output parser
 export async function askAi(req: Request, res: Response) {
   try {
     const { markdown, task } = req.body as AiScraperBodyRequest;
@@ -315,6 +319,101 @@ export async function askAiV2(
       },
       true,
     );
+  }
+}
+
+export async function askAIAPI(req: Request, res: Response) {
+  try {
+    const { markdown, schema } = req.body as AiScraperApiBodyRequest;
+    const context = limitTokens(markdown, 125_000);
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let user:
+      | ChatPromptTemplate<InputValues, string>
+      | BaseMessagePromptTemplateLike = ["user", `Web Content: {input}`];
+    let system1: BaseMessagePromptTemplateLike = [
+      "system",
+      "You are an AI Scraper assistant built by MR Scraper. Your task is to extract web content to list product and return data in JSON format as given. Please ensure you return it in a pretty JSON format.",
+    ];
+    let systemGuard: BaseMessagePromptTemplateLike = [
+      "system",
+      "!!IMPORTANT DO NOT TO GIVE: \n 1. Information that is not included in the search results or history.. \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. \n\n !!IMPORTANT: \n PROVIDE: \n 1. Readable JSON format as given with unique entries (make sure there is no repeated data)",
+    ];
+    const finalResponseSchema = eval(jsonSchemaToZod(schema));
+    console.log(zodToJsonSchema(finalResponseSchema));
+    let extractorSchema: FunctionDefinition = {
+      name: "extractor",
+      description: "Extracts fields from the input.",
+      parameters: zodToJsonSchema(finalResponseSchema),
+    };
+    console.log("Here the extracted schema", extractorSchema);
+    const prompt = ChatPromptTemplate.fromMessages([
+      system1,
+      user,
+      systemGuard,
+    ]);
+    const parser = StructuredOutputParser.fromZodSchema(finalResponseSchema);
+    const countTokens = (usageMetadata: UsageMetadata) => {
+      inputTokens += usageMetadata.input_tokens;
+      outputTokens += usageMetadata.output_tokens;
+    };
+    let answer = "";
+    const llmOutput = (
+      output: LLMResult,
+      runId: string,
+      parentRunId?: string,
+      tags?: string[],
+    ) => {
+      answer = output.generations[0][0].text;
+    };
+    const llmCallback = openAICallbackHandler(
+      true,
+      countTokens,
+      () => {},
+      llmOutput,
+    );
+    const chatModel = new ChatOpenAI({
+      model: "gpt-4o-mini",
+      temperature: 0,
+    }).bind({
+      callbacks: [llmCallback],
+    });
+    const llmChain = RunnableSequence.from([prompt, chatModel, parser]);
+    let result;
+    try {
+      result = await llmChain.invoke({
+        input: context,
+        format_instructions: parser.getFormatInstructions(),
+      });
+    } catch (error: any) {
+      console.error("Error parsing json result", error);
+      console.log("Answer", answer);
+      const fixParser = OutputFixingParser.fromLLM(
+        new ChatOpenAI({ temperature: 0, model: "gpt-4o-mini" }),
+        parser,
+      );
+      result = await fixParser.parse(answer);
+      console.log("Fixed Result", result);
+    }
+    console.log("\nAnswer:\n", result);
+    const output = result;
+    console.log(`\n=======\nInput token usage: ${inputTokens}\n=======\n`);
+    console.log(`\n=======\nOutput tokens usage: ${outputTokens}\n=======\n`);
+    if (output) {
+      return successResponse(
+        res,
+        "AI Scraper completed successfully",
+        {
+          result: output,
+          inputTokens,
+          outputTokens,
+        },
+        200,
+      );
+    }
+  } catch (error: any) {
+    console.error("Error", error);
+    return errorResponse(res, "Internal server error", error?.message, 500);
   }
 }
 
