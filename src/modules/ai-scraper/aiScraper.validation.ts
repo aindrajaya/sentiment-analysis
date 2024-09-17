@@ -255,6 +255,11 @@ const AiScraperApiSchema = z.object({
       markdown: z.string({
         required_error: "Markdown is required",
       }),
+      url: z
+        .string({
+          required_error: "URL is required",
+        })
+        .url({ message: "Invalid URL" }),
       min: z.number().optional().default(1),
       max: z.number().optional().default(1),
       schema: z.object({

@@ -47,6 +47,7 @@ export interface AIOutputSchema {
 }
 
 export interface AiScraperApiBodyRequest {
+  url: string;
   markdown: string;
   schema: AIOutputSchema;
   min: number;
