@@ -20,47 +20,6 @@ export interface AiScraperV2BodyRequest {
   userId: string;
   scraperId: string;
 }
-
-export type AITypesSchema =
-  | "string"
-  | "number"
-  | "boolean"
-  | "object"
-  | "array";
-
-export type AIPropertiesSchema = {
-  [key: string]: {
-    type: AITypesSchema;
-    description: string;
-    properties?: AIPropertiesSchema;
-    items?: AIItemsSchema;
-  };
-};
-export type AIItemsSchema = {
-  type: AITypesSchema;
-  description?: string;
-  properties?: AIPropertiesSchema;
-  items?: AIItemsSchema;
-};
-export interface AIOutputSchema {
-  type: AITypesSchema;
-  description?: string;
-  properties?: AIPropertiesSchema;
-  items?: AIItemsSchema;
-}
-
-export interface AiScraperApiBodyRequest {
-  markdown: string;
-  schema: AIOutputSchema;
-}
-
-export interface AiScraperV2BodyRequest {
-  task: string;
-  sessionId: string;
-  userId: string;
-  scraperId: string;
-}
-
 export type AITypesSchema =
   | "string"
   | "number"
