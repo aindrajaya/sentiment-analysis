@@ -388,7 +388,8 @@ const convertSchemaToCommaSeparated = (
 
 export async function askAIAPI(req: Request, res: Response) {
   try {
-    const { markdown, schema, min, max } = req.body as AiScraperApiBodyRequest;
+    const { url, markdown, schema, min, max } =
+      req.body as AiScraperApiBodyRequest;
     const context = limitTokens(markdown, 125_000);
     const schemaPrompt = convertSchemaToCommaSeparated(schema, min, max);
     console.log("Schema Prompt", schemaPrompt);
@@ -402,7 +403,7 @@ export async function askAIAPI(req: Request, res: Response) {
     ];
     let system1: BaseMessagePromptTemplateLike = [
       "system",
-      "You are an AI Scraper assistant created by MR Scraper. Your role is to extract all available data as many as possible from the web content and provide it in a JSON format as per the user's request",
+      `You are an AI Scraper assistant created by MR Scraper. Your role is to extract all available data as many as possible from the web content at ${url} and provide it in a JSON format as per the user's request`,
     ];
     let systemGuard: BaseMessagePromptTemplateLike = [
       "system",
