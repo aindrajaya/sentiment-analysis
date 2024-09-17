@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { socketValidate, validate } from "../../utils/helper.util.js";
-
 const AiScraperSchema = z.object({
   body: z.object({
     markdown: z.string({
@@ -11,7 +10,6 @@ const AiScraperSchema = z.object({
     }),
   }),
 });
-
 const AiScraperSchemaV2 = z.object({
   body: z.object({
     sessionId: z.string({
@@ -28,7 +26,6 @@ const AiScraperSchemaV2 = z.object({
     }),
   }),
 });
-
 const AiScraperSchemaFinalAnswer = z.object({
   body: z.object({
     sessionId: z.string({
@@ -39,7 +36,6 @@ const AiScraperSchemaFinalAnswer = z.object({
     }),
   }),
 });
-
 const AiScraperSchemaGetSessions = z.object({
   params: z.object({
     userId: z.string({
@@ -47,7 +43,6 @@ const AiScraperSchemaGetSessions = z.object({
     }),
   }),
 });
-
 const AiScraperSchemaGetChatHistory = z.object({
   params: z.object({
     userId: z.string({
@@ -58,7 +53,6 @@ const AiScraperSchemaGetChatHistory = z.object({
     }),
   }),
 });
-
 const AiScraperSchemaMigrateChatHistory = z.object({
   params: z.object({
     userId: z.string({
@@ -74,7 +68,6 @@ const AiScraperSchemaMigrateChatHistory = z.object({
     }),
   }),
 });
-
 const AiIdentifierSchema = z.object({
   body: z.object({
     markdown: z.string({
@@ -101,19 +94,20 @@ const AiIdentifierSchema = z.object({
       .base64({ message: "Invalid base64" }),
   }),
 });
+const typeSchema = z.enum(["object", "array", "string", "number", "boolean"], {
+  required_error: "Type is required",
+  invalid_type_error:
+    "Type must be in object, array, string, number, boolean types",
+});
 
 const propertiesSchema = z.record(
   z.string().nonempty({ message: "Key is required" }),
   z
     .object({
-      type: z.string({
-        required_error: "Type is required",
+      type: typeSchema,
+      description: z.string({
+        required_error: "Description is required",
       }),
-      description: z
-        .string({
-          required_error: "Description is required",
-        })
-        .optional(),
       properties: z
         .record(
           z.string().nonempty({ message: "Key is required" }),
@@ -132,11 +126,9 @@ const propertiesSchema = z.record(
           type: z.string({
             required_error: "Type is required",
           }),
-          description: z
-            .string({
-              required_error: "Description is required",
-            })
-            .optional(),
+          description: z.string({
+            required_error: "Description is required",
+          }),
           properties: z
             .record(
               z.string().nonempty({ message: "Key is required" }),
@@ -166,8 +158,17 @@ const propertiesSchema = z.record(
           code: z.ZodIssueCode.custom,
           message: "Items is required for array type",
         });
+      } else if (value.type !== "object" && value.properties) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Properties is not allowed for non-object type",
+        });
+      } else if (value.type !== "array" && value.items) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Items is not allowed for non-array type",
+        });
       }
-
       if (value.required && value.properties) {
         for (const key of value.required) {
           if (!value.properties[key]) {
@@ -178,7 +179,6 @@ const propertiesSchema = z.record(
           }
         }
       }
-
       if (value.items && value.items.type === "object") {
         for (const key of Object.keys(value.items.properties!)) {
           if (value.items.required && !value.items.required.includes(key)) {
@@ -191,12 +191,6 @@ const propertiesSchema = z.record(
       }
     }),
 );
-
-const typeSchema = z.enum(["object", "array", "string", "number", "boolean"], {
-  required_error: "Type is required",
-  invalid_type_error: "Type must be either object or array",
-});
-
 const itemsSchema = z
   .object({
     type: typeSchema,
@@ -228,12 +222,20 @@ const itemsSchema = z
         code: z.ZodIssueCode.custom,
         message: "Properties is required for object type",
       });
-    }
-
-    if (value.type === "array" && !value.items) {
+    } else if (value.type === "array" && !value.items) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "Items is required for array type",
+      });
+    } else if (value.type !== "object" && value.properties) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Properties is not allowed for non-object type",
+      });
+    } else if (value.type !== "array" && value.items) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Items is not allowed for non-array type",
       });
     }
 
@@ -247,7 +249,6 @@ const itemsSchema = z
         }
       }
     }
-
     if (value.required && value.properties) {
       for (const key of value.required) {
         if (!value.properties[key]) {
@@ -259,13 +260,19 @@ const itemsSchema = z
       }
     }
   });
-
 const AiScraperApiSchema = z.object({
   body: z
     .object({
       markdown: z.string({
         required_error: "Markdown is required",
       }),
+      url: z
+        .string({
+          required_error: "URL is required",
+        })
+        .url({ message: "Invalid URL" }),
+      min: z.number().optional().default(1),
+      max: z.number().optional().default(1),
       schema: z.object({
         type: typeSchema,
         items: itemsSchema.optional(),
@@ -284,8 +291,17 @@ const AiScraperApiSchema = z.object({
           code: z.ZodIssueCode.custom,
           message: "Properties is required for object schema",
         });
+      } else if (schema.type !== "object" && schema.properties) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Properties is not allowed for non-object schema",
+        });
+      } else if (schema.type !== "array" && schema.items) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Items is not allowed for non-array schema",
+        });
       }
-
       if (schema.required && schema.properties) {
         for (const key of schema.required) {
           if (!schema.properties[key]) {
@@ -296,7 +312,6 @@ const AiScraperApiSchema = z.object({
           }
         }
       }
-
       if (schema.items && schema.items.type === "object") {
         for (const key of Object.keys(schema.items.properties!)) {
           if (schema.items.required && !schema.items.required.includes(key)) {
@@ -309,7 +324,6 @@ const AiScraperApiSchema = z.object({
       }
     }),
 });
-
 const aiScraperValidation = validate(AiScraperSchema);
 const aiScraperV2Validation = socketValidate(AiScraperSchemaV2);
 const aiScraperApiValidation = validate(AiScraperApiSchema);
@@ -323,7 +337,6 @@ const aiScraperV2MigrateChatHistoryValidation = validate(
   AiScraperSchemaMigrateChatHistory,
 );
 const aiFinalAnswerValidation = validate(AiScraperSchemaFinalAnswer);
-
 export {
   apiAiScraperV2Validation,
   aiScraperValidation,

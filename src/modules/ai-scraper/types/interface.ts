@@ -61,6 +61,49 @@ export interface AiScraperV2BodyRequest {
   scraperId: string;
 }
 
+export type AITypesSchema =
+  | "string"
+  | "number"
+  | "boolean"
+  | "object"
+  | "array";
+
+export type AIPropertiesSchema = {
+  [key: string]: {
+    type: AITypesSchema;
+    description: string;
+    properties?: AIPropertiesSchema;
+    items?: AIItemsSchema;
+  };
+};
+export type AIItemsSchema = {
+  type: AITypesSchema;
+  description?: string;
+  properties?: AIPropertiesSchema;
+  items?: AIItemsSchema;
+};
+export interface AIOutputSchema {
+  type: AITypesSchema;
+  description?: string;
+  properties?: AIPropertiesSchema;
+  items?: AIItemsSchema;
+}
+
+export interface AiScraperApiBodyRequest {
+  url: string;
+  markdown: string;
+  schema: AIOutputSchema;
+  min: number;
+  max: number;
+}
+
+export interface AiScraperV2BodyRequest {
+  task: string;
+  sessionId: string;
+  userId: string;
+  scraperId: string;
+}
+
 export interface AiScraperV2FinalAnswerBodyRequest {
   sessionId: string;
   userId: string;
@@ -98,6 +141,11 @@ export interface AiScraperV2FinalAnswerBodyResponse {
 export interface AiScraperV2GetSessionsBodyResponse {
   sessionId: string;
   name: string;
+}
+
+export interface AiScraperV2TokenUsageBodyResponse {
+  inputTokens: number;
+  outputTokens: number;
 }
 
 export type AiScraperV2GetChatHistoryBodyResponse = StoredMessage[];
