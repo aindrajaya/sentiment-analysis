@@ -81,6 +81,17 @@ const AiIdentifierSchema = z.object({
         required_error: "URL is required",
       })
       .url({ message: "Invalid URL" }),
+    isError: z.boolean({
+      required_error: "Is Error is required",
+    }),
+    httpStatus: z.number({
+      required_error: "HTTP Status is required",
+    }),
+    screenshot: z
+      .string({
+        required_error: "Screenshot is required",
+      })
+      .base64({ message: "Invalid base64" }),
   }),
 });
 const typeSchema = z.enum(["object", "array", "string", "number", "boolean"], {
