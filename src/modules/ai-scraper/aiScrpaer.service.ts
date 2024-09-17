@@ -2,6 +2,7 @@
 import "dotenv/config";
 import { Request, Response } from "express";
 import { z } from "zod";
+import { jsonSchemaToZod } from "json-schema-to-zod";
 // ================= Langhchain libs ====================
 import { CohereRerank } from "@langchain/cohere";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
@@ -14,11 +15,17 @@ import type { InputValues } from "@langchain/core/utils/types";
 import {
   ChatPromptTemplate,
   MessagesPlaceholder,
+  PromptTemplate,
 } from "@langchain/core/prompts";
 import { JsonOutputParser } from "@langchain/core/output_parsers";
 import { JsonOutputFunctionsParser } from "langchain/output_parsers";
 import { FunctionDefinition } from "@langchain/core/language_models/base";
-
+import { zodToJsonSchema } from "zod-to-json-schema";
+import {
+  StructuredOutputParser,
+  OutputFixingParser,
+} from "langchain/output_parsers";
+import { RunnableSequence } from "@langchain/core/runnables";
 // ================== Internal libs =====================
 import { MongoDBChatMessageHistory } from "../../utils/memory/chat_history.js";
 import {
@@ -34,9 +41,12 @@ import {
 } from "../../utils/etl/markdown.js";
 import { markdownSplitter } from "../../utils/etl/markdown.js";
 import jsonParser from "../../utils/etl/jsonParser.js";
-
 import {
   AiIdentifierBodyRequest,
+  AIItemsSchema,
+  AIOutputSchema,
+  AIPropertiesSchema,
+  AiScraperApiBodyRequest,
   AiScraperBodyRequest,
   AiScraperV2BodyRequest,
   AiScraperV2BodyResponse,
@@ -55,9 +65,7 @@ import {
 import { SearchWebContentTool } from "../../utils/langchain/tools/searchWebContent.js";
 import { createReActAgent } from "../../utils/langchain/agent/createReActAgent.js";
 import { ChainWithMessageHistory } from "../../utils/langchain/chain/chainWithHistory.js";
-import openAICallbackHandler from "../../utils/langchain/callbacks/llm/openAiCb.js";
-
-// NOTE: PIPELINE: ETL process -> vectorization -> similiarity search -> reranking -> chat ai -> output parser
+import openAICallbackHandler from "../../utils/langchain/callbacks/llm/openAiCb.js"; // NOTE: PIPELINE: ETL process -> vectorization -> similiarity search -> reranking -> chat ai -> output parser
 export async function askAi(req: Request, res: Response) {
   try {
     const { markdown, task } = req.body as AiScraperBodyRequest;
@@ -134,14 +142,14 @@ export async function askAi(req: Request, res: Response) {
           inputTokens,
           outputTokens,
         },
-        200,
+        200
       );
     }
     return errorResponse(
       res,
       "Internal server error",
       "Error parsing output",
-      500,
+      500
     );
   } catch (error: any) {
     console.error("Error", error);
@@ -153,13 +161,12 @@ export async function askAi(req: Request, res: Response) {
 export async function askAiV2(
   payload: AiScraperV2BodyRequest,
   callback: (response: AiScraperV2BodyResponse, isFinal: boolean) => void,
-  streaming: boolean = true,
+  streaming: boolean = true
 ) {
   try {
     let { task, userId, sessionId, scraperId } = payload;
     const memory = new MongoDBChatMessageHistory({ userId, sessionId });
     const { pageContent, webPage } = await memory.getPageContent();
-    const docs = await markdownSplitter(pageContent);
     const countTokens = (usageMetadata: UsageMetadata) => {
       memory.addSessionUsageMetadata(usageMetadata);
     };
@@ -184,14 +191,14 @@ export async function askAiV2(
       ],
       new MessagesPlaceholder("agent_scratchpad"),
     ]);
-    const tools = [new SearchWebContentTool(docs)];
+    const tools = [new SearchWebContentTool(pageContent)];
 
     const finalResponseSchema = z.object({
       desc: z.string().describe("The explanation of scraped data"),
       json: z
         .string()
         .describe(
-          "the json format of scraped data, !IMPORTANT should in json markdown format like ```json RESULT_HERE ```, make sure the json is in pretty with multiple line and readable.",
+          "the json format of scraped data, !IMPORTANT should in json markdown format like ```json RESULT_HERE ```, make sure the json is in pretty with multiple line and readable."
         ),
     });
     const agent = await createReActAgent({
@@ -225,14 +232,14 @@ export async function askAiV2(
         callback,
         userId,
         sessionId,
-        scraperId,
+        scraperId
       );
     } else {
       const result = await withHistory.invoke({ input: task }, config);
       console.log("Result", result);
       callback(
         { desc: result?.output?.desc, json: result?.output?.json },
-        true,
+        true
       );
     }
   } catch (error: any) {
@@ -242,8 +249,183 @@ export async function askAiV2(
         desc: "Ups, something went wrong.",
         json: `\`\`\`json {error: "${error?.message}" } \`\`\``,
       },
-      true,
+      true
     );
+  }
+}
+
+const convertPropertiesToCommaseparated = (
+  properties: AIPropertiesSchema,
+  min: number,
+  max: number
+) => {
+  let prompt = "";
+  Object.keys(properties!).forEach((key, index) => {
+    if (properties[key].type === "object") {
+      prompt += convertPropertiesToCommaseparated(
+        properties[key].properties!,
+        min,
+        max
+      );
+    } else if (properties[key].type === "array") {
+      prompt += `- ${key} with type ${properties[key].type} (${
+        properties[key].description || ""
+      })\n`;
+      prompt += convertItemsToCommaseparated(properties[key].items!, min, max);
+    } else {
+      prompt += `- ${key} with type ${properties![key].type} (${
+        properties![key].description || ""
+      })\n`;
+    }
+  });
+  return prompt;
+};
+
+const convertItemsToCommaseparated = (
+  items: AIItemsSchema,
+  min: number,
+  max: number
+) => {
+  let prompt = "";
+  const type = `List ${items!.type == "object" ? "object" : ""}  (${
+    items!.description
+  }). Please provide the data with unique entries \nMINIMUM data: ${
+    min ?? 1
+  } \nMAXIMUM data: ${max ?? 1} \n`;
+  let detail = "";
+  if (items!.properties) {
+    detail += "Object properties:\n";
+    detail += convertPropertiesToCommaseparated(items!.properties!, min, max);
+  } else if (items!.items) {
+    prompt += convertItemsToCommaseparated(items!.items!, min, max);
+  }
+
+  prompt += `${type}\n${detail}\n`;
+
+  return prompt;
+};
+
+const convertSchemaToCommaSeparated = (
+  schema: AIOutputSchema,
+  min: number,
+  max: number
+) => {
+  let prompt = "";
+  if (schema.type === "object") {
+    prompt += convertPropertiesToCommaseparated(schema.properties!, min, max);
+  } else if (schema.type === "array") {
+    prompt += ``;
+    prompt += convertItemsToCommaseparated(schema.items!, min, max);
+  } else {
+    prompt += `${schema.description} with type ${schema.type}\n`;
+  }
+
+  return prompt;
+};
+
+export async function askAIAPI(req: Request, res: Response) {
+  try {
+    const { markdown, schema, min, max } = req.body as AiScraperApiBodyRequest;
+    const context = limitTokens(markdown, 125_000);
+    const schemaPrompt = convertSchemaToCommaSeparated(schema, min, max);
+    console.log("Schema Prompt", schemaPrompt);
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let user:
+      | ChatPromptTemplate<InputValues, string>
+      | BaseMessagePromptTemplateLike = [
+      "user",
+      `I need: \n--------------\n{user_want}\n--------------\n from this Web Content as many as possible : \n--------------\n{input}\n--------------\n`,
+    ];
+    let system1: BaseMessagePromptTemplateLike = [
+      "system",
+      "You are an AI Scraper assistant created by MR Scraper. Your role is to extract all available data as many as possible from the web content and provide it in a JSON format as per the user's request",
+    ];
+    let systemGuard: BaseMessagePromptTemplateLike = [
+      "system",
+      "!!IMPORTANT DO NOT TO GIVE: \n 1. Information that is not included in web content \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. \n\n !!IMPORTANT: \n PROVIDE: \n 1. Readable JSON format as given with unique entries (make sure there is no repeated data)",
+    ];
+    const finalResponseSchema = eval(jsonSchemaToZod(schema));
+    console.log(zodToJsonSchema(finalResponseSchema));
+    let extractorSchema: FunctionDefinition = {
+      name: "extractor",
+      description: "Extracts fields from the input.",
+      parameters: zodToJsonSchema(finalResponseSchema),
+    };
+    console.log("Here the extracted schema", extractorSchema);
+    const prompt = ChatPromptTemplate.fromMessages([
+      system1,
+      user,
+      systemGuard,
+    ]);
+    const parser = StructuredOutputParser.fromZodSchema(finalResponseSchema);
+    const countTokens = (usageMetadata: UsageMetadata) => {
+      inputTokens += usageMetadata.input_tokens;
+      outputTokens += usageMetadata.output_tokens;
+    };
+    let answer = "";
+    const llmOutput = (
+      output: LLMResult,
+      runId: string,
+      parentRunId?: string,
+      tags?: string[]
+    ) => {
+      answer = output.generations[0][0].text;
+    };
+    const llmCallback = openAICallbackHandler(
+      true,
+      countTokens,
+      () => {},
+      llmOutput
+    );
+    const chatModel = new ChatOpenAI({
+      model: "gpt-4o-mini",
+      temperature: 0,
+    }).bind({
+      callbacks: [llmCallback],
+    });
+    const llmChain = RunnableSequence.from([prompt, chatModel, parser]);
+    let result;
+    try {
+      result = await llmChain.invoke({
+        input: context,
+        user_want: schemaPrompt,
+        format_instructions: parser.getFormatInstructions(),
+      });
+    } catch (error: any) {
+      console.error("Error parsing json result", error);
+      console.log("Answer", answer);
+      const fixParser = OutputFixingParser.fromLLM(
+        new ChatOpenAI({ temperature: 0, model: "gpt-4o-mini" }),
+        parser,
+        {
+          prompt: PromptTemplate.fromTemplate(
+            "Instructions:\n--------------\n{instructions}\n--------------\nCompletion:\n--------------\n{completion}\n--------------\n\nAbove, the Completion did not satisfy the constraints given in the Instructions.\nError:\n--------------\n{error}\n--------------\n\nPlease try again. \n\n !IMPORTANT\n 1. Do not give data that not included in the completion (you can give an empty value with the same type laid out in the instructions) \n 2. Do Not Halucinate! \n 3. Only respond with an answer that satisfies the constraints laid out in the Instructions:"
+          ),
+        }
+      );
+      result = await fixParser.parse(answer);
+      console.log("Fixed Result", result);
+    }
+    console.log("\nAnswer:\n", result);
+    const output = result;
+    console.log(`\n=======\nInput token usage: ${inputTokens}\n=======\n`);
+    console.log(`\n=======\nOutput tokens usage: ${outputTokens}\n=======\n`);
+    if (output) {
+      return successResponse(
+        res,
+        "AI Scraper completed successfully",
+        {
+          result: output,
+          inputTokens,
+          outputTokens,
+        },
+        200
+      );
+    }
+  } catch (error: any) {
+    console.error("Error", error);
+    return errorResponse(res, "Internal server error", error?.message, 500);
   }
 }
 
@@ -258,7 +440,7 @@ export async function getSessions(req: Request, res: Response) {
       res,
       "Your sessions successfully netted",
       result,
-      200,
+      200
     );
   } catch (error: any) {
     console.error("Error", error);
@@ -306,7 +488,7 @@ export async function migrateChatHistory(req: Request, res: Response) {
       res,
       "Session migrated successfully",
       { isUpdated: result },
-      200,
+      200
     );
   } catch (error: any) {
     return errorResponse(res, "Internal server error", error?.message, 500);
@@ -480,7 +662,7 @@ Analyze the image given by user, identify the problem as below:
           inputTokens,
           outputTokens,
         },
-        200,
+        200
       );
     }
   } catch (error: any) {
