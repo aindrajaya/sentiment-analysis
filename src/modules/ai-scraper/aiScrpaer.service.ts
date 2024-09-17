@@ -238,7 +238,6 @@ export async function askAiV2(
     let { task, userId, sessionId, scraperId } = payload;
     const memory = new MongoDBChatMessageHistory({ userId, sessionId });
     const { pageContent, webPage } = await memory.getPageContent();
-    const docs = await markdownSplitter(pageContent);
     const countTokens = (usageMetadata: UsageMetadata) => {
       memory.addSessionUsageMetadata(usageMetadata);
     };
@@ -263,7 +262,7 @@ export async function askAiV2(
       ],
       new MessagesPlaceholder("agent_scratchpad"),
     ]);
-    const tools = [new SearchWebContentTool(docs)];
+    const tools = [new SearchWebContentTool(pageContent)];
 
     const finalResponseSchema = z.object({
       desc: z.string().describe("The explanation of scraped data"),
