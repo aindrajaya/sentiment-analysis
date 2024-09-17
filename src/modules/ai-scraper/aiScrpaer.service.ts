@@ -142,14 +142,14 @@ export async function askAi(req: Request, res: Response) {
           inputTokens,
           outputTokens,
         },
-        200,
+        200
       );
     }
     return errorResponse(
       res,
       "Internal server error",
       "Error parsing output",
-      500,
+      500
     );
   } catch (error: any) {
     console.error("Error", error);
@@ -161,7 +161,7 @@ export async function askAi(req: Request, res: Response) {
 export async function askAiV2(
   payload: AiScraperV2BodyRequest,
   callback: (response: AiScraperV2BodyResponse, isFinal: boolean) => void,
-  streaming: boolean = true,
+  streaming: boolean = true
 ) {
   try {
     let { task, userId, sessionId, scraperId } = payload;
@@ -198,7 +198,7 @@ export async function askAiV2(
       json: z
         .string()
         .describe(
-          "the json format of scraped data, !IMPORTANT should in json markdown format like ```json RESULT_HERE ```, make sure the json is in pretty with multiple line and readable.",
+          "the json format of scraped data, !IMPORTANT should in json markdown format like ```json RESULT_HERE ```, make sure the json is in pretty with multiple line and readable."
         ),
     });
     const agent = await createReActAgent({
@@ -232,14 +232,14 @@ export async function askAiV2(
         callback,
         userId,
         sessionId,
-        scraperId,
+        scraperId
       );
     } else {
       const result = await withHistory.invoke({ input: task }, config);
       console.log("Result", result);
       callback(
         { desc: result?.output?.desc, json: result?.output?.json },
-        true,
+        true
       );
     }
   } catch (error: any) {
@@ -249,7 +249,7 @@ export async function askAiV2(
         desc: "Ups, something went wrong.",
         json: `\`\`\`json {error: "${error?.message}" } \`\`\``,
       },
-      true,
+      true
     );
   }
 }
@@ -257,7 +257,7 @@ export async function askAiV2(
 const convertPropertiesToCommaseparated = (
   properties: AIPropertiesSchema,
   min: number,
-  max: number,
+  max: number
 ) => {
   let prompt = "";
   Object.keys(properties!).forEach((key, index) => {
@@ -265,13 +265,17 @@ const convertPropertiesToCommaseparated = (
       prompt += convertPropertiesToCommaseparated(
         properties[key].properties!,
         min,
-        max,
+        max
       );
     } else if (properties[key].type === "array") {
-      prompt += `- ${key} with type ${properties[key].type} (${properties[key].description || ""})\n`;
+      prompt += `- ${key} with type ${properties[key].type} (${
+        properties[key].description || ""
+      })\n`;
       prompt += convertItemsToCommaseparated(properties[key].items!, min, max);
     } else {
-      prompt += `- ${key} with type ${properties![key].type} (${properties![key].description || ""})\n`;
+      prompt += `- ${key} with type ${properties![key].type} (${
+        properties![key].description || ""
+      })\n`;
     }
   });
   return prompt;
@@ -280,10 +284,14 @@ const convertPropertiesToCommaseparated = (
 const convertItemsToCommaseparated = (
   items: AIItemsSchema,
   min: number,
-  max: number,
+  max: number
 ) => {
   let prompt = "";
-  const type = `List ${items!.type == "object" ? "object" : ""}  (${items!.description}). Please provide the data with unique entries \nMINIMUM data: ${min ?? 1} \nMAXIMUM data: ${max ?? 1} \n`;
+  const type = `List ${items!.type == "object" ? "object" : ""}  (${
+    items!.description
+  }). Please provide the data with unique entries \nMINIMUM data: ${
+    min ?? 1
+  } \nMAXIMUM data: ${max ?? 1} \n`;
   let detail = "";
   if (items!.properties) {
     detail += "Object properties:\n";
@@ -300,7 +308,7 @@ const convertItemsToCommaseparated = (
 const convertSchemaToCommaSeparated = (
   schema: AIOutputSchema,
   min: number,
-  max: number,
+  max: number
 ) => {
   let prompt = "";
   if (schema.type === "object") {
@@ -361,7 +369,7 @@ export async function askAIAPI(req: Request, res: Response) {
       output: LLMResult,
       runId: string,
       parentRunId?: string,
-      tags?: string[],
+      tags?: string[]
     ) => {
       answer = output.generations[0][0].text;
     };
@@ -369,7 +377,7 @@ export async function askAIAPI(req: Request, res: Response) {
       true,
       countTokens,
       () => {},
-      llmOutput,
+      llmOutput
     );
     const chatModel = new ChatOpenAI({
       model: "gpt-4o-mini",
@@ -393,9 +401,9 @@ export async function askAIAPI(req: Request, res: Response) {
         parser,
         {
           prompt: PromptTemplate.fromTemplate(
-            "Instructions:\n--------------\n{instructions}\n--------------\nCompletion:\n--------------\n{completion}\n--------------\n\nAbove, the Completion did not satisfy the constraints given in the Instructions.\nError:\n--------------\n{error}\n--------------\n\nPlease try again. \n\n !IMPORTANT\n 1. Do not give data that not included in the completion (you can give an empty value with the same type laid out in the instructions) \n 2. Do Not Halucinate! \n 3. Only respond with an answer that satisfies the constraints laid out in the Instructions:",
+            "Instructions:\n--------------\n{instructions}\n--------------\nCompletion:\n--------------\n{completion}\n--------------\n\nAbove, the Completion did not satisfy the constraints given in the Instructions.\nError:\n--------------\n{error}\n--------------\n\nPlease try again. \n\n !IMPORTANT\n 1. Do not give data that not included in the completion (you can give an empty value with the same type laid out in the instructions) \n 2. Do Not Halucinate! \n 3. Only respond with an answer that satisfies the constraints laid out in the Instructions:"
           ),
-        },
+        }
       );
       result = await fixParser.parse(answer);
       console.log("Fixed Result", result);
@@ -413,7 +421,7 @@ export async function askAIAPI(req: Request, res: Response) {
           inputTokens,
           outputTokens,
         },
-        200,
+        200
       );
     }
   } catch (error: any) {
@@ -531,7 +539,7 @@ export async function getSessions(req: Request, res: Response) {
       res,
       "Your sessions successfully netted",
       result,
-      200,
+      200
     );
   } catch (error: any) {
     console.error("Error", error);
@@ -579,7 +587,7 @@ export async function migrateChatHistory(req: Request, res: Response) {
       res,
       "Session migrated successfully",
       { isUpdated: result },
-      200,
+      200
     );
   } catch (error: any) {
     return errorResponse(res, "Internal server error", error?.message, 500);
@@ -753,7 +761,7 @@ Analyze the image given by user, identify the problem as below:
           inputTokens,
           outputTokens,
         },
-        200,
+        200
       );
     }
   } catch (error: any) {
