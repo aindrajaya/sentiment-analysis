@@ -5,7 +5,7 @@ import { countTokens } from "../../helper.util.js";
 export const SearchNestedWebContentTool = new DynamicStructuredTool({
   name: "search-nested-web-content",
   description:
-    "Tool used when you need to search related web content from nested web content like details of the data etc.",
+    "Tool used when you need to search related web content from nested web content like details of the data etc. Please make sure the url are valid with complete url not just the endpoint",
   schema: z.object({ urls: z.array(z.string()) }),
   func: async ({ urls }) => {
     console.log("urls", urls);
