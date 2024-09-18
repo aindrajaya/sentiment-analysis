@@ -154,6 +154,7 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
       totalToken: 0,
       pageContent: content,
     });
+    this.sessionId = session.insertedId;
     return session.insertedId.toString();
   }
 
