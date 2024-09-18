@@ -60,7 +60,6 @@ async function streamAIV2Response(
   let currentStream = "";
   let isDescDone = false;
   for await (const chunk of logStream) {
-    console.log("streaming");
     if (!finalState) {
       finalState = chunk;
     } else {
