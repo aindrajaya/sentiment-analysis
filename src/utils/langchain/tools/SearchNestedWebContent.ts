@@ -32,7 +32,16 @@ export const SearchNestedWebContentTool = new DynamicStructuredTool({
     if (tokenLength > 125_000) {
       const splittedMarkdown = [];
       for (const md of markdown) {
-        const docs = await markdownSplitter(md);
+        const docs = await markdownSplitter(md, {
+          semanticSplitter: [
+            ["Title: ", "Super Title"],
+            ["-----", "Title"],
+            ["--------", "Sub Title"],
+          ],
+          chunkSize: 2000,
+          chunkOverlap: 200,
+        });
+        console.log("========\n Docs \n", docs, "\n========");
         const embeddings = new OpenAIEmbeddings({
           apiKey: process.env.OPENAI_API_KEY,
         });
