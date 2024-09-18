@@ -118,6 +118,7 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
       [this.idKey]: this.sessionId,
     });
     const messages = document?.messages || [];
+    messages.splice(0, 1);
     return messages;
   }
   async getConversationTokenUsage() {
