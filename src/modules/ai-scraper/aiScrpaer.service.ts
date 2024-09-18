@@ -4,7 +4,7 @@ import { Request, Response } from "express";
 import { z } from "zod";
 import { jsonSchemaToZod } from "json-schema-to-zod";
 // ================= Langhchain libs ====================
-import { BaseMessage } from "@langchain/core/messages";
+import { BaseMessage, HumanMessage } from "@langchain/core/messages";
 import { CohereRerank } from "@langchain/cohere";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
@@ -667,11 +667,17 @@ Analyze the image given by user, identify the problem as below:
     if (output) {
       const memory = new MongoDBChatMessageHistory({ userId });
       const session = await memory.createSession(markdown, url);
+      const humanMessage: BaseMessage = new HumanMessage(
+        "Identify the web content",
+      );
       const aiMessage: BaseMessage = new AIOutputMessage(
-        JSON.stringify({ answer: content, usage_metadata: cost }),
+        JSON.stringify({
+          data_that_can_be_scraped: content,
+          usage_metadata: cost,
+        }),
       );
       console.log("AI Message", aiMessage);
-      await memory.addMessage(aiMessage);
+      await memory.addMessages([humanMessage, aiMessage]);
       return successResponse(
         res,
         "AI Scraper completed successfully",
