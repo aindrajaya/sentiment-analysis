@@ -12,6 +12,7 @@ const mongoUri = process.env.MONGO_URI;
 const xCallbackUrl = process.env.APP_URL + "/integration/x/oauth2-callback";
 const platformApiUrl = process.env.PLATFORM_API_URL;
 const platformWebhookSecret = process.env.PLATFORM_WEBHOOK_SECRET;
+const jinaApiKey = process.env.JINA_API_KEY;
 export {
   platformWebhookSecret,
   platformApiUrl,
@@ -26,4 +27,5 @@ export {
   xClientId,
   xClientSecret,
   xCallbackUrl,
+  jinaApiKey,
 };

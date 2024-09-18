@@ -1,9 +1,10 @@
+import { jinaApiKey } from "../../configs/general.config.js";
+
 const extractMarkdown = async (base_url: string) => {
   const url = `https://r.jina.ai/${base_url}`;
   const data = await fetch(url, {
     headers: {
-      Authorization:
-        "Bearer jina_d60e30c381c74d1f8969890fff44dc15GoJGdCSemNALcHstj6cO4ysVk4Pz",
+      Authorization: "Bearer " + jinaApiKey,
     },
   })
     .then((res) => res.text())
