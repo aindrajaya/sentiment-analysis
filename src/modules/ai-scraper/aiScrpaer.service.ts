@@ -68,6 +68,7 @@ import { createReActAgent } from "../../utils/langchain/agent/createReActAgent.j
 import { ChainWithMessageHistory } from "../../utils/langchain/chain/chainWithHistory.js";
 import openAICallbackHandler from "../../utils/langchain/callbacks/llm/openAiCb.js"; // NOTE: PIPELINE: ETL process -> vectorization -> similiarity search -> reranking -> chat ai -> output parser
 import { AIOutputMessage } from "../../utils/langchain/message/ai.js";
+import { SearchNestedWebContentTool } from "../../utils/langchain/tools/SearchNestedWebContent.js";
 export async function askAi(req: Request, res: Response) {
   try {
     const { markdown, task } = req.body as AiScraperBodyRequest;
@@ -189,11 +190,14 @@ export async function askAiV2(
       ["user", "{input}"],
       [
         "system",
-        "!!IMPORTANT DO NOT TO GIVE: \n 1. Information that is not included in the search results or history.. \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. You can tell the user the data may not meet their needs, or inform them that ScrapeGPT is still in beta version, and our developers are working hard to improve its performance. \n\n !!IMPORTANT: \n PROVIDE: \n 1. Efficient answers \n 2. Clear explanations \n 3. Extra descriptions \n 4. Readable JSON format with unique entries (make sure there is no repeated data) \n 5. Relevance to the input \n 6. Follow-up questions at the end of the explanation e.g 'Do you want to know more about this?' or  'Which data do you want to scrape?'",
+        "!!IMPORTANT DO NOT TO GIVE: \n 1. Information that is not included in the search results or history.. \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. You can tell the user the data may not meet their needs, or inform them that ScrapeGPT is still in beta version, and our developers are working hard to improve its performance. \n\n !!IMPORTANT: \n PROVIDE: \n 1. Efficient answers \n 2. Clear explanations \n 3. Extra descriptions \n 4. Readable JSON format with unique entries (make sure there is no repeated data) \n 5. Relevance to the input \n 6. Follow-up questions at the end of the explanation e.g 'Do you want to know more about this?' or  'Which data do you want to scrape?' or if there is link to detailed page you can ask user 'Would you like to scrape the detail?' ",
       ],
       new MessagesPlaceholder("agent_scratchpad"),
     ]);
-    const tools = [new SearchWebContentTool(pageContent)];
+    const tools = [
+      SearchNestedWebContentTool,
+      new SearchWebContentTool(pageContent),
+    ];
 
     const finalResponseSchema = z.object({
       desc: z.string().describe("The explanation of scraped data"),
