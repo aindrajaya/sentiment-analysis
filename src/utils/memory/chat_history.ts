@@ -118,6 +118,7 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
       [this.idKey]: this.sessionId,
     });
     const messages = document?.messages || [];
+    messages.splice(0, 2);
     return messages;
   }
   async getConversationTokenUsage() {
@@ -154,6 +155,7 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
       totalToken: 0,
       pageContent: content,
     });
+    this.sessionId = session.insertedId;
     return session.insertedId.toString();
   }
 

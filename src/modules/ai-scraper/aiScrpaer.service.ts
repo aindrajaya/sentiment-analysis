@@ -4,6 +4,7 @@ import { Request, Response } from "express";
 import { z } from "zod";
 import { jsonSchemaToZod } from "json-schema-to-zod";
 // ================= Langhchain libs ====================
+import { BaseMessage, HumanMessage } from "@langchain/core/messages";
 import { CohereRerank } from "@langchain/cohere";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
@@ -66,6 +67,7 @@ import { SearchWebContentTool } from "../../utils/langchain/tools/searchWebConte
 import { createReActAgent } from "../../utils/langchain/agent/createReActAgent.js";
 import { ChainWithMessageHistory } from "../../utils/langchain/chain/chainWithHistory.js";
 import openAICallbackHandler from "../../utils/langchain/callbacks/llm/openAiCb.js"; // NOTE: PIPELINE: ETL process -> vectorization -> similiarity search -> reranking -> chat ai -> output parser
+import { AIOutputMessage } from "../../utils/langchain/message/ai.js";
 export async function askAi(req: Request, res: Response) {
   try {
     const { markdown, task } = req.body as AiScraperBodyRequest;
@@ -627,7 +629,13 @@ Analyze the image given by user, identify the problem as below:
     ]);
 
     const parser = new JsonOutputFunctionsParser();
+    let cost = {
+      input_tokens: 0,
+      output_tokens: 0,
+      total_tokens: 0,
+    };
     const countTokens = (usageMetadata: UsageMetadata) => {
+      cost = usageMetadata;
       inputTokens += usageMetadata.input_tokens;
       outputTokens += usageMetadata.output_tokens;
     };
@@ -641,11 +649,16 @@ Analyze the image given by user, identify the problem as below:
       callbacks: [llmCallback],
     });
     const llmChain = prompt.pipe(chatModel).pipe(parser);
+    let content = "";
     let result;
     if (!isError) {
       result = await llmChain.invoke({ input: context, url });
+      // @ts-ignore
+      content = `#${result?.title}\n\n${result?.content}\n\n${result?.howMany}\n${result?.followup}`;
     } else {
       result = await llmChain.invoke({ screenshot, httpStatus });
+      // @ts-ignore
+      content = `#${result.title}\n\n${result.problem}\n\n${result.solution}\n\n${result.howTo}\n\n${result.impact}`;
     }
     console.log("\nAnswer:\n", result);
     const output = result;
@@ -654,6 +667,17 @@ Analyze the image given by user, identify the problem as below:
     if (output) {
       const memory = new MongoDBChatMessageHistory({ userId });
       const session = await memory.createSession(markdown, url);
+      const humanMessage: BaseMessage = new HumanMessage(
+        "Identify the web content",
+      );
+      const aiMessage: BaseMessage = new AIOutputMessage(
+        JSON.stringify({
+          data_that_can_be_scraped: content,
+          usage_metadata: cost,
+        }),
+      );
+      console.log("AI Message", aiMessage);
+      await memory.addMessages([humanMessage, aiMessage]);
       return successResponse(
         res,
         "AI Scraper completed successfully",
