@@ -19,13 +19,15 @@ export const SearchNestedWebContentTool = new DynamicStructuredTool({
   func: async ({ urls, question }) => {
     console.log("urls", urls);
     console.log("question", question);
-    const markdown: Promise<string[]> | any = [];
+    let markdown: Promise<string[]> | any = [];
     for (const url of urls) {
-      markdown.push(await extractMarkdown(url));
+      markdown.push(extractMarkdown(url));
     }
 
+    markdown = await Promise.all(markdown);
+
     console.log(
-      `=======================\n Markdown Detail: \n ${JSON.stringify(markdown)} \n=======================`,
+      `=======================\n Markdown All: \n ${JSON.stringify(markdown)} \n=======================`,
     );
 
     const tokenLength = countTokens(JSON.stringify(markdown));
