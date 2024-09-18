@@ -1,4 +1,4 @@
-import { jinaApiKey } from "../../configs/general.config.js";
+import { jinaApiKey, proxyUrl } from "../../configs/general.config.js";
 import fetch from "node-fetch";
 import { HttpsProxyAgent } from "https-proxy-agent";
 
@@ -8,9 +8,7 @@ const extractMarkdown = async (base_url: string) => {
     // headers: {
     //   Authorization: "Bearer " + jinaApiKey,
     // },
-    agent: new HttpsProxyAgent(
-      "http://xjrxxdsh-rotate:bs1a64qlhfnk@p.webshare.io:80",
-    ),
+    agent: new HttpsProxyAgent(proxyUrl!),
   })
     .then((res) => res.text())
     .catch((err) => "");

@@ -13,6 +13,7 @@ const xCallbackUrl = process.env.APP_URL + "/integration/x/oauth2-callback";
 const platformApiUrl = process.env.PLATFORM_API_URL;
 const platformWebhookSecret = process.env.PLATFORM_WEBHOOK_SECRET;
 const jinaApiKey = process.env.JINA_API_KEY;
+const proxyUrl = process.env.PROXY_URL;
 export {
   platformWebhookSecret,
   platformApiUrl,
@@ -28,4 +29,5 @@ export {
   xClientSecret,
   xCallbackUrl,
   jinaApiKey,
+  proxyUrl,
 };
