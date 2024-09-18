@@ -145,7 +145,11 @@ export async function createReActAgent({
       }
     });
 
-  const openAiFunctions = tools.map((tool) => convertToOpenAIFunction(tool));
+  const openAiFunctions = tools.map((tool) => {
+    const openAIFunction = convertToOpenAIFunction(tool);
+    console.log(openAIFunction);
+    return openAIFunction;
+  });
 
   const llmWithTools = model.bind({
     // @ts-ignore
