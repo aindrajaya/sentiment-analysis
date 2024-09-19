@@ -16,7 +16,7 @@ interface MongoDBChatMessageHistoryProps {
 }
 
 /** HACK: SOME DATA SCHEMA DETAILS:
- 
+
     AI Answer Schema
     - descritption: "the answer"
     - result: "```json JSON_RESULT ```"
@@ -35,7 +35,7 @@ interface MongoDBChatMessageHistoryProps {
     - - - - - tool_call_id: the tool call id
     - - - - - additional_kwargs: additional kwargs
     - - - - - response_metadata: response metadata
-    - - - - - - response_metadata schema key-value pair 
+    - - - - - - response_metadata schema key-value pair
     - - - - - - - documentUsed: the documents from chunk of pageContent used in the conversation
     - - - - - - - oToken: output token used in the conversation
     - - - - - - - iToken: input token used in the conversation
@@ -259,5 +259,23 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
       [this.idKey]: this.sessionId,
       userId: this.userId,
     });
+  }
+
+  async getContentIdentifier() {
+    try {
+      const document = await this.collection.findOne({
+        userId: this.userId,
+        [this.idKey]: this.sessionId,
+      });
+      const messages = document?.messages || [];
+      const contentIdentifier = JSON.parse(messages[1].data.content)
+        .data_that_can_be_scraped;
+
+      return contentIdentifier;
+
+    } catch (error) {
+      console.error(error);
+      return '';
+    }
   }
 }
