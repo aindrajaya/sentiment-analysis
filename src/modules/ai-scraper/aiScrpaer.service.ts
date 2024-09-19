@@ -58,6 +58,7 @@ import {
   AiScraperV2GetSessionsParamsRequest,
   AiScraperV2MigrateChatHistoryBodyRequest,
   AiScraperV2TokenUsageBodyResponse,
+  AITypesSchema,
 } from "./types/interface.js";
 import {
   LLMResult,
@@ -329,12 +330,77 @@ const convertSchemaToCommaSeparated = (
   return prompt;
 };
 
+const isNested = (
+  props: AIPropertiesSchema,
+): AIPropertiesSchema | undefined => {
+  let nestedSchema: AIPropertiesSchema | undefined = undefined;
+  const keys = Object.keys(props).map((key) => key);
+  for (const key of keys) {
+    console.log("Key", key);
+    if (props[key].type === "nested") {
+      if (!nestedSchema) {
+        nestedSchema = {};
+      }
+      nestedSchema[key] = props[key];
+      console.log("ada nested nih", nestedSchema);
+      delete props[key];
+      props[`${key}_url`] = {
+        type: "string",
+        description: `URL for nested ${key}`,
+      };
+    } else if (props![key].type === "object") {
+      return isNested(props[key].properties!);
+    } else if (props![key].type === "array") {
+      if (props![key].items!.type === "object") {
+        return isNested(props![key].items!.properties!);
+      }
+    }
+  }
+  return nestedSchema;
+};
+
+// how to search target key from an object and replace the value with new value
+function deepSearchAndReplace(
+  data: any,
+  target: string,
+  new_value: any,
+  visited = new Set(),
+) {
+  if (typeof data !== "object" || data === null) {
+    return;
+  }
+
+  if (Array.isArray(data)) {
+  } else {
+    Object.keys(data).forEach((key: string) => {
+      if (key == target && visited.has(key)) {
+        data[key] = new_value;
+        visited.add(key);
+      }
+    });
+  }
+}
+
+const clearSchema = (schema: AIOutputSchema) => {
+  const cpSchema = { ...schema };
+  if (cpSchema.type === "object") {
+    console.log("masuk");
+    const nestedSchema = isNested(cpSchema.properties!);
+    console.log("Nested Schema clear schema layer", nestedSchema);
+    return { cpSchema, nestedSchema };
+  }
+  return { cpSchema, nestedSchema: undefined };
+};
+
 export async function askAIAPI(req: Request, res: Response) {
   try {
     const { url, markdown, schema, min, max } =
       req.body as AiScraperApiBodyRequest;
     const context = limitTokens(markdown, 125_000);
-    const schemaPrompt = convertSchemaToCommaSeparated(schema, min, max);
+    const { cpSchema, nestedSchema } = clearSchema(schema);
+    console.log("Schema", cpSchema);
+    console.log("Nested Schema", nestedSchema);
+    const schemaPrompt = convertSchemaToCommaSeparated(cpSchema, min, max);
     console.log("Schema Prompt", schemaPrompt);
     let inputTokens = 0;
     let outputTokens = 0;
@@ -352,7 +418,7 @@ export async function askAIAPI(req: Request, res: Response) {
       "system",
       "!!IMPORTANT DO NOT TO GIVE: \n 1. Information that is not included in web content \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. \n\n !!IMPORTANT: \n PROVIDE: \n 1. Readable JSON format as given with unique entries (make sure there is no repeated data)",
     ];
-    const finalResponseSchema = eval(jsonSchemaToZod(schema));
+    const finalResponseSchema = eval(jsonSchemaToZod(cpSchema));
     console.log(zodToJsonSchema(finalResponseSchema));
     let extractorSchema: FunctionDefinition = {
       name: "extractor",
@@ -413,6 +479,87 @@ export async function askAIAPI(req: Request, res: Response) {
       );
       result = await fixParser.parse(answer);
       console.log("Fixed Result", result);
+    }
+    if (nestedSchema) {
+      const keys = Object.keys(nestedSchema).map((key) => (key += "_url"));
+      let nestedResult = [];
+      for (const key of keys) {
+        const originalKey = key.split("_url")[0];
+        const schemaPrompt = convertSchemaToCommaSeparated(
+          nestedSchema[originalKey].schema!,
+          min,
+          max,
+        );
+        const prompt2 = ChatPromptTemplate.fromMessages([
+          system1,
+          user,
+          systemGuard,
+          new MessagesPlaceholder("agent_scratchpad"),
+        ]);
+        const model = new ChatOpenAI({
+          model: "gpt-4o-mini",
+          temperature: 0,
+          callbacks: [llmCallback],
+        });
+        const finalResponseSchema = eval(jsonSchemaToZod(cpSchema));
+        model.pipe(new JsonOutputParser());
+        const tools = [SearchNestedWebContentTool];
+        const agent = await createReActAgent({
+          model,
+          tools,
+          prompt: prompt2,
+          finalResponseSchema,
+          streamRunnable: false,
+          outputKey: "data",
+        });
+        const runnable = new AgentExecutor({
+          agent,
+          tools,
+          verbose: true,
+        });
+
+        nestedResult.push(
+          runnable.invoke({
+            input: JSON.stringify(result),
+            user_want: `${originalKey} for each data from nested web content in each ${key} then ${schemaPrompt}`,
+          }),
+        );
+      }
+      nestedResult = await Promise.all(nestedResult);
+      console.log("Nested Result: ", nestedResult);
+      let index = 0;
+      for (const nested of nestedResult) {
+        const key = keys[index].split("_url")[0];
+        // i want to search the key in result variable
+        // if its exist change with the finalResult
+        let finalResult = nested.output?.data;
+
+        if (typeof finalResult === "object") {
+          finalResult = finalResult[Object.keys(finalResult)[0]];
+        }
+        let nestedIndex = 0;
+        for (const data of finalResult) {
+          const schema = eval(jsonSchemaToZod(nestedSchema[key].schema!));
+          const parser = StructuredOutputParser.fromZodSchema(schema);
+          const fixParser = OutputFixingParser.fromLLM(
+            new ChatOpenAI({ temperature: 0, model: "gpt-4o-mini" }),
+            parser,
+            {
+              prompt: PromptTemplate.fromTemplate(
+                "Instructions:\n--------------\n{instructions}\n--------------\nCompletion:\n--------------\n{completion}\n--------------\n\nAbove, the Completion did not satisfy the constraints given in the Instructions.\nError:\n--------------\n{error}\n--------------\n\nPlease try again. \n\n !IMPORTANT\n 1. Do not give data that not included in the completion (you can give an empty value with the same type laid out in the instructions) \n 2. Do Not Halucinate! \n 3. Only respond with an answer that satisfies the constraints laid out in the Instructions:",
+              ),
+            },
+          );
+          console.log("data", data);
+          const fixed = await fixParser.parse(JSON.stringify(data));
+          console.log("Fixed Result", fixed);
+          finalResult[finalResult.indexOf(data)] = fixed;
+          nestedIndex++;
+        }
+
+        console.log("Final Result", finalResult);
+        index++;
+      }
     }
     console.log("\nAnswer:\n", result);
     const output = result;

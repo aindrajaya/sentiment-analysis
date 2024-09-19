@@ -29,10 +29,11 @@ export type AITypesSchema =
 
 export type AIPropertiesSchema = {
   [key: string]: {
-    type: AITypesSchema;
+    type: AITypesSchema | "nested";
     description: string;
     properties?: AIPropertiesSchema;
     items?: AIItemsSchema;
+    schema?: AIOutputSchema;
   };
 };
 export type AIItemsSchema = {
