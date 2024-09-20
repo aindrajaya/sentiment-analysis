@@ -9,10 +9,7 @@ import {
 } from "../modules/ai-scraper/types/interface.js";
 import { ChatOpenAI } from "@langchain/openai";
 import { PromptTemplate, ChatPromptTemplate } from "@langchain/core/prompts";
-import {
-  OpenAICallbackHandler,
-  OpenAICallbackHandlerReturn,
-} from "./langchain/callbacks/llm/openAiCb.js";
+import { OpenAICallbackHandlerReturn } from "./langchain/callbacks/llm/openAiCb.js";
 import { JsonOutputParser } from "@langchain/core/output_parsers";
 import { jsonSchemaToZod } from "json-schema-to-zod";
 import { SearchNestedWebContentTool } from "./langchain/tools/SearchNestedWebContent.js";
