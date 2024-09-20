@@ -170,6 +170,7 @@ export async function askAiV2(
   try {
     let { task, userId, sessionId, scraperId } = payload;
     const memory = new MongoDBChatMessageHistory({ userId, sessionId });
+    const contentIdentifier = await memory.getContentIdentifier();
     const { pageContent, webPage } = await memory.getPageContent();
     const countTokens = (usageMetadata: UsageMetadata) => {
       memory.addSessionUsageMetadata(usageMetadata);
@@ -185,13 +186,13 @@ export async function askAiV2(
     const prompt = ChatPromptTemplate.fromMessages([
       [
         "system",
-        `You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape/get from available web content at ${webPage}, you can use available tools that will help you to answer. If you have to return the data in json format, please make sure you return it with pretty json. \n\n NOTE: Currently your in a beta version so you still in learning proccess to get better scraping data.`,
+        `You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape/get from available web content at ${webPage}, you can use available tools that will help you to answer. If you have to return the data in json format, please make sure you return it with pretty json. And if user ask to get all of data, you should give them all item and all data field like this ${contentIdentifier}. \n\n NOTE: Currently your in a beta version so you still in learning proccess to get better scraping data.`,
       ],
       new MessagesPlaceholder("chat_history"),
       ["user", "{input}"],
       [
         "system",
-        "!!IMPORTANT DO NOT TO GIVE: \n 1. Information that is not included in the search results or history.. \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. You can tell the user the data may not meet their needs, or inform them that ScrapeGPT is still in beta version, and our developers are working hard to improve its performance. \n\n !!IMPORTANT: \n PROVIDE: \n 1. Efficient answers \n 2. Clear explanations \n 3. Extra descriptions \n 4. Readable JSON format with unique entries (make sure there is no repeated data) \n 5. Relevance to the input \n 6. Follow-up questions at the end of the explanation e.g 'Do you want to know more about this?' or  'Which data do you want to scrape?' or if there is link to detailed page you can ask user 'Would you like to scrape the detail?' ",
+        "!!IMPORTANT DO NOT TO GIVE: \n 1. Information that is not included in the search results or history.. \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. You can tell the user the data may not meet their needs, or inform them that ScrapeGPT is still in beta version, and our developers are working hard to improve its performance. \n\n !!IMPORTANT: \n PROVIDE: \n 1. All information \n 2. Clear explanations \n 3. Extra descriptions \n 4. Readable JSON format with unique entries (make sure there is no repeated data) \n 5. Relevance to the input \n 6. Follow-up questions at the end of the explanation e.g 'Do you want to know more about this?' or  'Which data do you want to scrape?' or if there is link to detailed page you can ask user 'Would you like to scrape the detail?' ",
       ],
       new MessagesPlaceholder("agent_scratchpad"),
     ]);
@@ -585,15 +586,15 @@ export async function identifyContent(req: Request, res: Response) {
       ];
       systemGuard = [
         "system",
-        `FORMAT INSTRUCTIONS! 
+        `FORMAT INSTRUCTIONS!
 Analyze the image given by user, identify the problem as below:
 1. Title for the problem (e.g. Proxy Error, Bot Detected, Auth Required)
 2. What is the problem? (proxy_error, bot_detected, auth_required) with snake case (e.g. bot_detected)
-3. What is the solution? 
+3. What is the solution?
   a. if the problem is proxy_error, the solution is to use a different proxy. (proxy)
   b. if the problem is bot_detected, the solution is to use a different proxy also, because the current proxy is detected as a bot. (proxy)
   c. if the problem is auth_required, the solution is to login to the website. (login)
-4. How to solve the problem?  
+4. How to solve the problem?
   a. if the solution is to use a different proxy, suggest user to use user best custom proxy provider if available or try again the scraping (important to give step by step with Readable list format).
   b. if the solution is to login to the website, provide the step to login to the website (important to give step by step with Readable format).
 5. What is the impact of the problem? (e.g. can't scrape data, can't login)`,
