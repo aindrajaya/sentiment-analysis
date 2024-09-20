@@ -118,7 +118,7 @@ const propertiesSchema = z.record(
             description: z.string({
               required_error: "Description is required",
             }),
-          }),
+          })
         )
         .optional(),
       items: z
@@ -139,7 +139,7 @@ const propertiesSchema = z.record(
                 description: z.string({
                   required_error: "Description is required",
                 }),
-              }),
+              })
             )
             .optional(),
           required: z.array(z.string()).optional(),
@@ -189,7 +189,7 @@ const propertiesSchema = z.record(
           }
         }
       }
-    }),
+    })
 );
 const itemsSchema = z
   .object({
@@ -324,17 +324,27 @@ const AiScraperApiSchema = z.object({
       }
     }),
 });
+const AiPaginateSchema = z.object({
+  body: z.object({
+    url: z
+      .string({
+        required_error: "URL is required",
+      })
+      .url({ message: "Invalid URL" }),
+  }),
+});
 const aiScraperValidation = validate(AiScraperSchema);
 const aiScraperV2Validation = socketValidate(AiScraperSchemaV2);
 const aiScraperApiValidation = validate(AiScraperApiSchema);
+const aiScraperApiPaginateValidation = validate(AiPaginateSchema);
 const apiAiScraperV2Validation = validate(AiScraperSchemaV2);
 const aiIdentifierValidation = validate(AiIdentifierSchema);
 const aiScraperV2GetSessionsValidation = validate(AiScraperSchemaGetSessions);
 const aiScraperV2GetChatHistoryValidation = validate(
-  AiScraperSchemaGetChatHistory,
+  AiScraperSchemaGetChatHistory
 );
 const aiScraperV2MigrateChatHistoryValidation = validate(
-  AiScraperSchemaMigrateChatHistory,
+  AiScraperSchemaMigrateChatHistory
 );
 const aiFinalAnswerValidation = validate(AiScraperSchemaFinalAnswer);
 export {
@@ -347,4 +357,5 @@ export {
   aiScraperV2GetChatHistoryValidation,
   aiScraperV2MigrateChatHistoryValidation,
   aiScraperApiValidation,
+  aiScraperApiPaginateValidation,
 };

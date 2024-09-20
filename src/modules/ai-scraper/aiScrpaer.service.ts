@@ -48,6 +48,7 @@ import {
   AIOutputSchema,
   AIPropertiesSchema,
   AiScraperApiBodyRequest,
+  AiScraperApiPaginateBodyRequest,
   AiScraperBodyRequest,
   AiScraperV2BodyRequest,
   AiScraperV2BodyResponse,
@@ -433,6 +434,23 @@ export async function askAIAPI(req: Request, res: Response) {
         200
       );
     }
+  } catch (error: any) {
+    console.error("Error", error);
+    return errorResponse(res, "Internal server error", error?.message, 500);
+  }
+}
+
+export async function paginateAIAPI(req: Request, res: Response) {
+  try {
+    const { url } = req.body as AiScraperApiPaginateBodyRequest;
+    return successResponse(
+      res,
+      "AI Scraper completed successfully",
+      {
+        url,
+      },
+      200
+    );
   } catch (error: any) {
     console.error("Error", error);
     return errorResponse(res, "Internal server error", error?.message, 500);
