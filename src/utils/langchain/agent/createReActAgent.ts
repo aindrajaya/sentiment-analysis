@@ -51,6 +51,11 @@ export type CreateReActAgentParams = {
    *
    */
   finalResponseSchema?: ZodSchema<any>;
+
+  /**
+   * The key to use for the output of the agent. Defaults to `destructured_output`.
+   */
+  outputKey?: string;
 };
 export async function createReActAgent({
   model,
@@ -58,6 +63,7 @@ export async function createReActAgent({
   prompt,
   streamRunnable,
   finalResponseSchema,
+  outputKey = "destructured_output",
 }: CreateReActAgentParams) {
   let responseSchema;
   if (finalResponseSchema) {
@@ -105,9 +111,15 @@ export async function createReActAgent({
               log: toolInput,
             };
           }
+          let output = {};
+          if (outputKey === "destructured_output") {
+            output = { ...toolInput };
+          } else {
+            output = { [outputKey]: toolInput };
+          }
           return {
             returnValues: {
-              output: { ...toolInput, usage_metadata: message.usage_metadata },
+              output: { ...output, usage_metadata: message.usage_metadata },
             },
             log: message.content,
           };

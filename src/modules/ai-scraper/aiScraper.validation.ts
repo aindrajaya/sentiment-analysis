@@ -94,11 +94,14 @@ const AiIdentifierSchema = z.object({
       .base64({ message: "Invalid base64" }),
   }),
 });
-const typeSchema = z.enum(["object", "array", "string", "number", "boolean"], {
-  required_error: "Type is required",
-  invalid_type_error:
-    "Type must be in object, array, string, number, boolean types",
-});
+const typeSchema = z.enum(
+  ["object", "array", "string", "number", "boolean", "nested"],
+  {
+    required_error: "Type is required",
+    invalid_type_error:
+      "Type must be in object, array, string, number, boolean, nested types",
+  },
+);
 
 const propertiesSchema = z.record(
   z.string().nonempty({ message: "Key is required" }),
@@ -120,6 +123,49 @@ const propertiesSchema = z.record(
             }),
           })
         )
+        .optional(),
+      schema: z
+        .object({
+          type: typeSchema,
+          items: z
+            .object({
+              type: z.string({
+                required_error: "Type is required",
+              }),
+              description: z.string({
+                required_error: "Description is required",
+              }),
+              properties: z
+                .record(
+                  z.string().nonempty({ message: "Key is required" }),
+                  z.object({
+                    type: z.string({
+                      required_error: "Type is required",
+                    }),
+                    description: z.string({
+                      required_error: "Description is required",
+                    }),
+                  }),
+                )
+                .optional(),
+              required: z.array(z.string()).optional(),
+            })
+            .optional(),
+          properties: z
+            .record(
+              z.string().nonempty({ message: "Key is required" }),
+              z.object({
+                type: z.string({
+                  required_error: "Type is required",
+                }),
+                description: z.string({
+                  required_error: "Description is required",
+                }),
+              }),
+            )
+            .optional(),
+          required: z.array(z.string()).optional(),
+        })
         .optional(),
       items: z
         .object({
@@ -157,6 +203,16 @@ const propertiesSchema = z.record(
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: "Items is required for array type",
+        });
+      } else if (value.type === "nested" && !value.schema) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Schema is required for nested type",
+        });
+      } else if (value.type !== "nested" && value.schema) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Schema is not allowed for non-nested type",
         });
       } else if (value.type !== "object" && value.properties) {
         ctx.addIssue({
@@ -312,9 +368,13 @@ const AiScraperApiSchema = z.object({
           }
         }
       }
-      if (schema.items && schema.items.type === "object") {
-        for (const key of Object.keys(schema.items.properties!)) {
-          if (schema.items.required && !schema.items.required.includes(key)) {
+      if (
+        schema.items &&
+        schema.items.type === "object" &&
+        schema.items.required
+      ) {
+        for (const key of schema.items.required) {
+          if (!schema.items.properties![key]) {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
               message: `Key ${key} is not in required keys`,
