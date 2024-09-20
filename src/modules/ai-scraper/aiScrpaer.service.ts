@@ -61,7 +61,7 @@ import {
 import { SearchWebContentTool } from "../../utils/langchain/tools/searchWebContent.js";
 import { createReActAgent } from "../../utils/langchain/agent/createReActAgent.js";
 import { ChainWithMessageHistory } from "../../utils/langchain/chain/chainWithHistory.js";
-import openAICallbackHandler from "../../utils/langchain/callbacks/llm/openAiCb.js"; // NOTE: PIPELINE: ETL process -> vectorization -> similiarity search -> reranking -> chat ai -> output parser
+import openAICallbackHandler from "../../utils/langchain/callbacks/llm/openAiCb.js";
 import { AIOutputMessage } from "../../utils/langchain/message/ai.js";
 import { SearchNestedWebContentTool } from "../../utils/langchain/tools/SearchNestedWebContent.js";
 import {
