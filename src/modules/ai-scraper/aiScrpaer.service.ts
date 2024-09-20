@@ -333,10 +333,15 @@ export async function askAIAPI(req: Request, res: Response) {
       console.log("Fixed Result", result);
     }
     if (nestedSchema) {
+      let nestedSystemGuard: BaseMessagePromptTemplateLike = [
+        "system",
+        `IMPORTANT!! DO NOT TO GIVE: \n 1. Information that is not included in web content \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. 3. Do not Halucinate \n\n !!IMPORTANT: \n PROVIDE: \n 1. Readable JSON format as given with unique entries (make sure there is no repeated data)\n\n\n `,
+      ];
+
       const nestedPrompt = ChatPromptTemplate.fromMessages([
         system1,
         user,
-        systemGuard,
+        nestedSystemGuard,
         new MessagesPlaceholder("agent_scratchpad"),
       ]);
 

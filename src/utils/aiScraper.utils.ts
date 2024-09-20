@@ -13,13 +13,14 @@ import { OpenAICallbackHandlerReturn } from "./langchain/callbacks/llm/openAiCb.
 import { JsonOutputParser } from "@langchain/core/output_parsers";
 import { jsonSchemaToZod } from "json-schema-to-zod";
 import { SearchNestedWebContentTool } from "./langchain/tools/SearchNestedWebContent.js";
+import { z } from "zod";
 import { createReActAgent } from "./langchain/agent/createReActAgent.js";
 import { AgentExecutor } from "langchain/agents";
 
 export const convertPropertiesToCommaseparated = (
   properties: AIPropertiesSchema,
-  min: number,
-  max: number,
+  min?: number,
+  max?: number,
 ) => {
   let prompt = "";
   Object.keys(properties!).forEach((key, index) => {
@@ -45,15 +46,13 @@ export const convertPropertiesToCommaseparated = (
 
 export const convertItemsToCommaseparated = (
   items: AIItemsSchema,
-  min: number,
-  max: number,
+  min?: number,
+  max?: number,
 ) => {
   let prompt = "";
   const type = `List ${items!.type == "object" ? "object" : ""}  (${
     items!.description
-  }). Please provide the data with unique entries \nMINIMUM data: ${
-    min ?? 1
-  } \nMAXIMUM data: ${max ?? 1} \n`;
+  }). Please provide the data with unique entries \n${min !== undefined ? "MINIMUM data: " + min : ""} \n${max !== undefined ? "MAXIMUM data: " + max : ""} \n`;
   let detail = "";
   if (items!.properties) {
     detail += "Object properties:\n";
@@ -69,8 +68,8 @@ export const convertItemsToCommaseparated = (
 
 export const convertSchemaToPrompt = (
   schema: AIOutputSchema,
-  min: number,
-  max: number,
+  min?: number,
+  max?: number,
 ) => {
   let prompt = "";
   if (schema.type === "object") {
@@ -128,6 +127,12 @@ export const clearSchema = (schema: AIOutputSchema) => {
     const nestedSchema = isNested(cpSchema.properties!, schema.properties!);
     console.log("Nested Schema clear schema layer", nestedSchema);
     return { cpSchema, nestedSchema };
+  } else if (cpSchema.type === "array" && cpSchema.items!.type == "object") {
+    const nestedSchema = isNested(
+      cpSchema.items!.properties!,
+      schema.items!.properties!,
+    );
+    return { cpSchema, nestedSchema };
   }
   return { cpSchema, nestedSchema: undefined };
 };
@@ -162,26 +167,57 @@ export const handleSchemaTypeNested = async (
   prompt: PromptTemplate | ChatPromptTemplate,
   parentResult: any,
 ) => {
+  const test = z.object({ data: z.any() });
+  console.log(nestedSchema);
   const originalSchema = eval(jsonSchemaToZod(schema));
   const originalParser = StructuredOutputParser.fromZodSchema(originalSchema);
   const keys = Object.keys(nestedSchema).map((key) => (key += "_url"));
+  console.log("Keys", keys);
   let nestedResult = [];
   for (const key of keys) {
     const originalKey = key.split("_url")[0];
-    const schemaPrompt = convertSchemaToPrompt(
-      nestedSchema[originalKey].schema!,
-      min,
-      max,
-    );
+    const items: AIItemsSchema = {
+      type: nestedSchema[originalKey].schema!.type,
+      description: nestedSchema[originalKey].schema!.description,
+    };
+    if (nestedSchema[originalKey].schema!.properties) {
+      items.properties = {
+        key: { type: "string", description: `${originalKey} url` },
+        ...nestedSchema[originalKey].schema!.properties,
+      };
+    } else if (nestedSchema[originalKey].schema!.items) {
+      items.items = {
+        type: "object",
+        description: `List of ${originalKey}`,
+        // @ts-ignore
+        properties: {
+          key: { type: "string", description: `${originalKey} url` },
+          [`${originalKey}`]: nestedSchema[originalKey].schema!.items,
+        },
+      };
+    }
+
+    const currentSchema: AIOutputSchema = {
+      type: "object",
+      description: `Final response for ${originalKey}`,
+      properties: {
+        data: {
+          type: "array",
+          description: `List of ${originalKey}`,
+          items,
+        },
+      },
+    };
+    // const currentSchema = nestedSchema[originalKey].schema!;
+    const schemaPrompt = convertSchemaToPrompt(currentSchema);
 
     const model = new ChatOpenAI({
       model: "gpt-4o-mini",
       temperature: 0,
       callbacks: [llmCallback],
     });
-    const finalResponseSchema = eval(
-      jsonSchemaToZod(nestedSchema[key].schema!),
-    );
+    console.log(currentSchema);
+    const finalResponseSchema = eval(jsonSchemaToZod(currentSchema));
     model.pipe(new JsonOutputParser());
     const tools = [SearchNestedWebContentTool];
     const agent = await createReActAgent({
@@ -200,8 +236,8 @@ export const handleSchemaTypeNested = async (
 
     nestedResult.push(
       runnable.invoke({
-        input: JSON.stringify(parentResult[key]),
-        user_want: `${originalKey} for each data from nested web content in each ${key} then ${schemaPrompt}`,
+        input: `${JSON.stringify(parentResult)}`,
+        user_want: `${originalKey}(${schemaPrompt}) for each data from nested web content in each ${key}`,
       }),
     );
   }
@@ -211,9 +247,6 @@ export const handleSchemaTypeNested = async (
     const key = keys[index].split("_url")[0];
     let finalResult = nested.output?.data;
 
-    if (typeof finalResult === "object") {
-      finalResult = finalResult[Object.keys(finalResult)[0]];
-    }
     parentResult = await fixParser(
       originalParser,
       `${JSON.stringify(parentResult)}\n\n ${key}: ${JSON.stringify(finalResult)}`,

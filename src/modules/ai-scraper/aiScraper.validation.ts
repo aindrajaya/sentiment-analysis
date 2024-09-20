@@ -368,9 +368,13 @@ const AiScraperApiSchema = z.object({
           }
         }
       }
-      if (schema.items && schema.items.type === "object") {
-        for (const key of Object.keys(schema.items.properties!)) {
-          if (schema.items.required && !schema.items.required.includes(key)) {
+      if (
+        schema.items &&
+        schema.items.type === "object" &&
+        schema.items.required
+      ) {
+        for (const key of schema.items.required) {
+          if (!schema.items.properties![key]) {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
               message: `Key ${key} is not in required keys`,
