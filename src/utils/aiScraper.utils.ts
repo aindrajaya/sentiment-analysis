@@ -255,7 +255,7 @@ export const handleSchemaTypeNested = async (
 
     parentResult = await fixParser(
       originalParser,
-      `${JSON.stringify(parentResult)}\n\n ${key}: ${JSON.stringify(finalResult)}`,
+      `${JSON.stringify(parentResult)}\n\n ${key}: ${JSON.stringify(finalResult.data ?? finalResult)}`,
       llmCallback,
     );
     index++;
