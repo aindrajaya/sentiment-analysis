@@ -92,4 +92,8 @@ const openAICallbackHandler = (
       }
     },
   });
+
+export type OpenAICallbackHandlerReturn = ReturnType<
+  typeof openAICallbackHandler
+>;
 export default openAICallbackHandler;
