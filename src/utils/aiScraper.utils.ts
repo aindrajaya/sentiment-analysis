@@ -182,7 +182,10 @@ export const handleSchemaTypeNested = async (
     };
     if (nestedSchema[originalKey].schema!.properties) {
       items.properties = {
-        key: { type: "string", description: `${originalKey} url` },
+        key: {
+          type: "string",
+          description: `can be a name/id/index for the relation to the web content`,
+        },
         ...nestedSchema[originalKey].schema!.properties,
       };
     } else if (nestedSchema[originalKey].schema!.items) {
@@ -191,7 +194,10 @@ export const handleSchemaTypeNested = async (
         description: `List of ${originalKey}`,
         // @ts-ignore
         properties: {
-          key: { type: "string", description: `${originalKey} url` },
+          key: {
+            type: "string",
+            description: `can be a name/id/index for the relation to the web content`,
+          },
           [`${originalKey}`]: nestedSchema[originalKey].schema!.items,
         },
       };
@@ -237,7 +243,7 @@ export const handleSchemaTypeNested = async (
     nestedResult.push(
       runnable.invoke({
         input: `${JSON.stringify(parentResult)}`,
-        user_want: `${originalKey}(${schemaPrompt}) for each data from nested web content in each ${key}`,
+        user_want: `${originalKey}(${schemaPrompt}) for each data from nested web content in each ${key}, then combine it with the web content given`,
       }),
     );
   }
