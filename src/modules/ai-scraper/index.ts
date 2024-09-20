@@ -2,7 +2,6 @@ import * as express from "express";
 import {
   aiFinalAnswerValidation,
   aiIdentifierValidation,
-  aiScraperApiPaginateValidation,
   aiScraperApiValidation,
   aiScraperV2GetChatHistoryValidation,
   aiScraperV2GetSessionsValidation,
@@ -19,7 +18,6 @@ import {
   getSessions,
   identifyContent,
   migrateChatHistory,
-  paginateAIAPI,
   saveFinalAnswer,
 } from "./aiScrpaer.service.js";
 import { successResponse } from "../../utils/helper.util.js";
@@ -33,35 +31,30 @@ aiRouter.post(
     askAiV2(
       req.body,
       (result) => successResponse(res, "answered", result, 200),
-      false
-    )
+      false,
+    ),
 );
 aiRouter.post("/v2/api", aiScraperApiValidation, askAIAPI);
-aiRouter.post(
-  "/v2/api/paginate",
-  aiScraperApiPaginateValidation,
-  paginateAIAPI
-);
 aiRouter.post("/v2/save-result", aiFinalAnswerValidation, saveFinalAnswer);
 aiRouter.get(
   "/v2/chat-history/:userId",
   aiScraperV2GetSessionsValidation,
-  getSessions
+  getSessions,
 );
 aiRouter.get(
   "/v2/chat-history/:userId/:sessionId",
   aiScraperV2GetChatHistoryValidation,
-  getChatHistory
+  getChatHistory,
 );
 aiRouter.get(
   "/v2/token-usage/:userId/:sessionId",
   aiScraperV2GetChatHistoryValidation,
-  getConversationTokenUsage
+  getConversationTokenUsage,
 );
 aiRouter.put(
   "/v2/migrate/:userId/:sessionId",
   aiScraperV2MigrateChatHistoryValidation,
-  migrateChatHistory
+  migrateChatHistory,
 );
 aiRouter.post("/identify", aiIdentifierValidation, identifyContent);
 

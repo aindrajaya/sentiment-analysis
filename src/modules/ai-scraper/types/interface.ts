@@ -57,10 +57,6 @@ export interface AiScraperApiBodyRequest {
   max: number;
 }
 
-export interface AiScraperApiPaginateBodyRequest {
-  url: string;
-}
-
 export interface AiScraperV2BodyRequest {
   task: string;
   sessionId: string;
