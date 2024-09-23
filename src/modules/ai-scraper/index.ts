@@ -19,7 +19,7 @@ import {
   identifyContent,
   migrateChatHistory,
   saveFinalAnswer,
-} from "./aiScrpaer.service.js";
+} from "./aiScraper.service.js";
 import { successResponse } from "../../utils/helper.util.js";
 
 const aiRouter = express.Router();

@@ -39,9 +39,6 @@ import {
 import jsonParser from "../../utils/etl/jsonParser.js";
 import {
   AiIdentifierBodyRequest,
-  AIItemsSchema,
-  AIOutputSchema,
-  AIPropertiesSchema,
   AiScraperApiBodyRequest,
   AiScraperBodyRequest,
   AiScraperV2BodyRequest,
