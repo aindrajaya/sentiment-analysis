@@ -63,7 +63,7 @@ import { createReActAgent } from "../../utils/langchain/agent/createReActAgent.j
 import { ChainWithMessageHistory } from "../../utils/langchain/chain/chainWithHistory.js";
 import openAICallbackHandler from "../../utils/langchain/callbacks/llm/openAiCb.js";
 import { AIOutputMessage } from "../../utils/langchain/message/ai.js";
-import { SearchNestedWebContentTool } from "../../utils/langchain/tools/SearchNestedWebContent.js";
+import { SearchNestedWebContentTool } from "../../utils/langchain/tools/searchNestedWebContent.js";
 import {
   clearSchema,
   convertSchemaToPrompt,
@@ -147,14 +147,14 @@ export async function askAi(req: Request, res: Response) {
           inputTokens,
           outputTokens,
         },
-        200
+        200,
       );
     }
     return errorResponse(
       res,
       "Internal server error",
       "Error parsing output",
-      500
+      500,
     );
   } catch (error: any) {
     console.error("Error", error);
@@ -166,7 +166,7 @@ export async function askAi(req: Request, res: Response) {
 export async function askAiV2(
   payload: AiScraperV2BodyRequest,
   callback: (response: AiScraperV2BodyResponse, isFinal: boolean) => void,
-  streaming: boolean = true
+  streaming: boolean = true,
 ) {
   try {
     let { task, userId, sessionId, scraperId } = payload;
@@ -208,7 +208,7 @@ export async function askAiV2(
       json: z
         .string()
         .describe(
-          "the json format of scraped data, !IMPORTANT should in json markdown format like ```json RESULT_HERE ```, make sure the json is in pretty with multiple line and readable."
+          "the json format of scraped data, !IMPORTANT should in json markdown format like ```json RESULT_HERE ```, make sure the json is in pretty with multiple line and readable.",
         ),
     });
     const agent = await createReActAgent({
@@ -242,14 +242,14 @@ export async function askAiV2(
         callback,
         userId,
         sessionId,
-        scraperId
+        scraperId,
       );
     } else {
       const result = await withHistory.invoke({ input: task }, config);
       console.log("Result", result);
       callback(
         { desc: result?.output?.desc, json: result?.output?.json },
-        true
+        true,
       );
     }
   } catch (error: any) {
@@ -259,7 +259,7 @@ export async function askAiV2(
         desc: "Ups, something went wrong.",
         json: `\`\`\`json {error: "${error?.message}" } \`\`\``,
       },
-      true
+      true,
     );
   }
 }
@@ -304,7 +304,7 @@ export async function askAIAPI(req: Request, res: Response) {
       output: LLMResult,
       runId: string,
       parentRunId?: string,
-      tags?: string[]
+      tags?: string[],
     ) => {
       answer = output.generations[0][0].text;
     };
@@ -312,7 +312,7 @@ export async function askAIAPI(req: Request, res: Response) {
       true,
       countTokens,
       () => {},
-      llmOutput
+      llmOutput,
     );
     const chatModel = new ChatOpenAI({
       model: "gpt-4o-mini",
@@ -355,7 +355,7 @@ export async function askAIAPI(req: Request, res: Response) {
         max,
         llmCallback,
         nestedPrompt,
-        result
+        result,
       );
     }
     console.log("\nAnswer:\n", result);
@@ -371,7 +371,7 @@ export async function askAIAPI(req: Request, res: Response) {
           inputTokens,
           outputTokens,
         },
-        200
+        200,
       );
     }
   } catch (error: any) {
@@ -391,7 +391,7 @@ export async function getSessions(req: Request, res: Response) {
       res,
       "Your sessions successfully netted",
       result,
-      200
+      200,
     );
   } catch (error: any) {
     console.error("Error", error);
@@ -439,7 +439,7 @@ export async function migrateChatHistory(req: Request, res: Response) {
       res,
       "Session migrated successfully",
       { isUpdated: result },
-      200
+      200,
     );
   } catch (error: any) {
     return errorResponse(res, "Internal server error", error?.message, 500);
@@ -616,13 +616,13 @@ Analyze the image given by user, identify the problem as below:
       const memory = new MongoDBChatMessageHistory({ userId });
       const session = await memory.createSession(markdown, url);
       const humanMessage: BaseMessage = new HumanMessage(
-        "Identify the web content"
+        "Identify the web content",
       );
       const aiMessage: BaseMessage = new AIOutputMessage(
         JSON.stringify({
           data_that_can_be_scraped: content,
           usage_metadata: cost,
-        })
+        }),
       );
       console.log("AI Message", aiMessage);
       await memory.addMessages([humanMessage, aiMessage]);
@@ -635,7 +635,7 @@ Analyze the image given by user, identify the problem as below:
           inputTokens,
           outputTokens,
         },
-        200
+        200,
       );
     }
   } catch (error: any) {
