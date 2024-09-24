@@ -166,6 +166,7 @@ export const handleSchemaTypeNested = async (
   llmCallback: OpenAICallbackHandlerReturn,
   prompt: PromptTemplate | ChatPromptTemplate,
   parentResult: any,
+  apiKey: string,
 ) => {
   const test = z.object({ data: z.any() });
   console.log(nestedSchema);
@@ -225,7 +226,7 @@ export const handleSchemaTypeNested = async (
     console.log(currentSchema);
     const finalResponseSchema = eval(jsonSchemaToZod(currentSchema));
     model.pipe(new JsonOutputParser());
-    const tools = [SearchNestedWebContentTool];
+    const tools = [SearchNestedWebContentTool(apiKey)];
     const agent = await createReActAgent({
       model,
       tools,

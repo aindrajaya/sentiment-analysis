@@ -164,6 +164,7 @@ export async function askAi(req: Request, res: Response) {
 export async function askAiV2(
   payload: AiScraperV2BodyRequest,
   callback: (response: AiScraperV2BodyResponse, isFinal: boolean) => void,
+  apiKey: string,
   streaming: boolean = true,
 ) {
   try {
@@ -177,8 +178,8 @@ export async function askAiV2(
     };
     const llmCallback = openAICallbackHandler(true, countTokens);
     const tools = [
-      SearchNestedWebContentTool,
-      PaginateTool,
+      SearchNestedWebContentTool(apiKey),
+      PaginateTool(apiKey),
       new SearchWebContentTool(pageContent),
     ];
     const model = new ChatOpenAI({
@@ -268,6 +269,7 @@ export async function askAIAPI(req: Request, res: Response) {
   try {
     const { url, markdown, schema, min, max } =
       req.body as AiScraperApiBodyRequest;
+    const apiKey = req.headers["X-API-KEY"] as string;
     const context = limitTokens(markdown, 125_000);
     const { cpSchema, nestedSchema } = clearSchema(schema);
     const schemaPrompt = convertSchemaToPrompt(cpSchema, min, max);
@@ -356,6 +358,7 @@ export async function askAIAPI(req: Request, res: Response) {
         llmCallback,
         nestedPrompt,
         result,
+        apiKey,
       );
     }
     console.log("\nAnswer:\n", result);
