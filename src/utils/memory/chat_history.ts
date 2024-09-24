@@ -268,14 +268,15 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
         [this.idKey]: this.sessionId,
       });
       const messages = document?.messages || [];
-      const contentIdentifier = JSON.parse(messages[1].data.content)
-        .data_that_can_be_scraped;
+      const contentIdentifier = JSON.parse(
+        messages[1].data.content,
+      ).data_that_can_be_scraped;
+      const pagination = JSON.parse(messages[1].data.content).pagination;
 
-      return contentIdentifier;
-
+      return { contentIdentifier, pagination };
     } catch (error) {
       console.error(error);
-      return '';
+      return { contentIdentifier: "", pagination: "" };
     }
   }
 }
