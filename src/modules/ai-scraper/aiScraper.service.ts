@@ -190,7 +190,7 @@ export async function askAiV2(
     const prompt = ChatPromptTemplate.fromMessages([
       [
         "system",
-        `You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape/get from available web content at ${webPage}, you can use available tools that will help you to answer (Note: if user want to get data from pagination page,  ${pagination && Array.isArray(pagination) && pagination.length > 0 ? "ensure you use this pagintaion url" + JSON.stringify(pagination) : "please tell there is no Pagination Found"}). And if user ask to get all of data, you should give them all item and all data field like this ${contentIdentifier}. \n\n NOTE: Currently your in a beta version so you still in learning proccess to get better scraping data.`,
+        `You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape/get from available web content at ${webPage}, you can use available tools that will help you to answer. And if user ask to get all of data, you should give them all item and all data field like this ${contentIdentifier}. \n\n IMPORTANT!! if user ask to get data from pagination page eg. 'Get all data from page 2', ${pagination && Array.isArray(pagination) && pagination.length > 0 ? "ensure you use this pagintaion url" + JSON.stringify(pagination) : "please tell there is no Pagination Found"} else just use search tool. \n\n NOTE: Currently your in a beta version so you still in learning proccess to get better scraping data.`,
       ],
       new MessagesPlaceholder("chat_history"),
       ["user", "{input}"],
@@ -477,7 +477,7 @@ export async function identifyContent(req: Request, res: Response) {
     ];
     let systemGuard: BaseMessagePromptTemplateLike = [
       "system",
-      "!!IMPORTANT: \n PROVIDE: \n 1. Clear explanations with READABLE format!  \n  2. Follow-up questions to starting the conversation at the end of the explanation e.g 'Which data do you want to scrape? \n 3. Explanation How many data that can be scraped \n 4. list of pagination url of the web content if available. Do Not add any additional information that is not included in the web content user given.",
+      "!!IMPORTANT: \n PROVIDE: \n 1. Clear explanations with READABLE format!  \n  2. Follow-up questions to starting the conversation at the end of the explanation e.g 'Which data do you want to scrape? \n 3. Explanation How many data that can be scraped \n 4. Include the pagination URL of the web content if available. Do not add the pagination URL if it is not included in the web content. Make sure it is a valid pagination URL with full url and not something else.",
     ];
     let extractorSchema: FunctionDefinition = {
       name: "extractor",
@@ -492,7 +492,7 @@ export async function identifyContent(req: Request, res: Response) {
           content: {
             type: "string",
             description:
-              "list of data that can be scraped without any additional information that is no included in the web content user given",
+              "explanation of what datexplanation of what data can be scraped without any additional information that is no included in the web content user given",
           },
           followup: {
             type: "string",
@@ -506,7 +506,7 @@ export async function identifyContent(req: Request, res: Response) {
           pagination: {
             type: "array",
             description:
-              "list of pagination url of the web content if available! Please pass empty array if not available",
+              "list of pagination-related url of the web content if available! Please pass empty array if not available",
             items: {
               type: "string",
               description: "pagination url",
