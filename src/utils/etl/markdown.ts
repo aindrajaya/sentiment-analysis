@@ -150,8 +150,8 @@ export async function markdownSplitter(
     config.semanticSplitter,
   );
   const splitter = new RecursiveCharacterTextSplitter({
-    chunkSize: 2000,
-    chunkOverlap: 200,
+    chunkSize: config.chunkSize,
+    chunkOverlap: config.chunkOverlap,
   });
   const docs = await splitter.splitDocuments(splitMarkdown);
 
