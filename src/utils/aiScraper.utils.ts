@@ -12,7 +12,7 @@ import { PromptTemplate, ChatPromptTemplate } from "@langchain/core/prompts";
 import { OpenAICallbackHandlerReturn } from "./langchain/callbacks/llm/openAiCb.js";
 import { JsonOutputParser } from "@langchain/core/output_parsers";
 import { jsonSchemaToZod } from "json-schema-to-zod";
-import { SearchNestedWebContentTool } from "./langchain/tools/SearchNestedWebContent.js";
+import { SearchNestedWebContentTool } from "./langchain/tools/searchNestedWebContent.js";
 import { z } from "zod";
 import { createReActAgent } from "./langchain/agent/createReActAgent.js";
 import { AgentExecutor } from "langchain/agents";

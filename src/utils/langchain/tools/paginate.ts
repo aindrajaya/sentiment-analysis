@@ -13,9 +13,7 @@ import { CohereRerank } from "@langchain/cohere";
 
 export const PaginateTool = new DynamicStructuredTool({
   name: "paginate-tool",
-  description:
-    // "Tool used when you need to paginate the web to search for data the user needs from another page. Find the pagination buttons like previous and next or numbers like 1,2,3,4,5 for reference of the query param.",
-    "Tool used when you need to get web content from multiple pages. Make sure the urls you given are the pagination urls you got from search-web-content-tool",
+  description: "Tool used when you need to get web content from multiple pages",
   schema: z.object({
     urls: z.array(z.string()),
     question: z.string(),
@@ -32,8 +30,8 @@ export const PaginateTool = new DynamicStructuredTool({
 
     console.log(
       `=======================\n Markdown All: \n ${JSON.stringify(
-        markdown
-      )} \n=======================`
+        markdown,
+      )} \n=======================`,
     );
 
     const tokenLength = countTokens(JSON.stringify(markdown));
@@ -72,7 +70,7 @@ export const PaginateTool = new DynamicStructuredTool({
         console.log("Reranked");
 
         const context = customFormatMarkdownDocAsString(
-          rerankResult as ChainDoc[]
+          rerankResult as ChainDoc[],
         );
 
         splittedMarkdown.push(context);
