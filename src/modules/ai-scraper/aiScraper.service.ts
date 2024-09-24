@@ -68,6 +68,7 @@ import {
   handleSchemaTypeNested,
 } from "../../utils/aiScraper.utils.js";
 import { PaginateTool } from "../../utils/langchain/tools/paginate.js";
+
 export async function askAi(req: Request, res: Response) {
   try {
     const { markdown, task } = req.body as AiScraperBodyRequest;
@@ -168,23 +169,28 @@ export async function askAiV2(
   try {
     let { task, userId, sessionId, scraperId } = payload;
     const memory = new MongoDBChatMessageHistory({ userId, sessionId });
-    const contentIdentifier = await memory.getContentIdentifier();
+    const { contentIdentifier, pagination } =
+      await memory.getContentIdentifier();
     const { pageContent, webPage } = await memory.getPageContent();
     const countTokens = (usageMetadata: UsageMetadata) => {
       memory.addSessionUsageMetadata(usageMetadata);
     };
     const llmCallback = openAICallbackHandler(true, countTokens);
+    const tools = [
+      SearchNestedWebContentTool,
+      PaginateTool,
+      new SearchWebContentTool(pageContent),
+    ];
     const model = new ChatOpenAI({
       model: "gpt-4o-mini",
       temperature: 0,
       streaming,
       callbacks: [llmCallback],
     });
-    model.pipe(new JsonOutputParser());
     const prompt = ChatPromptTemplate.fromMessages([
       [
         "system",
-        `You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape/get from available web content at ${webPage}, you can use available tools that will help you to answer. If you have to return the data in json format, please make sure you return it with pretty json. And if user ask to get all of data, you should give them all item and all data field like this ${contentIdentifier}. \n\n NOTE: Currently your in a beta version so you still in learning proccess to get better scraping data.`,
+        `You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape/get from available web content at ${webPage}, you can use available tools that will help you to answer (Note: if user want to get data from pagination page,  ${pagination && Array.isArray(pagination) && pagination.length > 0 ? "ensure you use this pagintaion url" + JSON.stringify(pagination) : "please tell there is no Pagination Found"}). And if user ask to get all of data, you should give them all item and all data field like this ${contentIdentifier}. \n\n NOTE: Currently your in a beta version so you still in learning proccess to get better scraping data.`,
       ],
       new MessagesPlaceholder("chat_history"),
       ["user", "{input}"],
@@ -194,11 +200,7 @@ export async function askAiV2(
       ],
       new MessagesPlaceholder("agent_scratchpad"),
     ]);
-    const tools = [
-      SearchNestedWebContentTool,
-      PaginateTool,
-      new SearchWebContentTool(pageContent),
-    ];
+    model.pipe(new JsonOutputParser());
 
     const finalResponseSchema = z.object({
       desc: z.string().describe("The explanation of scraped data"),
@@ -217,6 +219,7 @@ export async function askAiV2(
     });
     const runnable = new AgentExecutor({
       agent,
+      // @ts-ignore
       tools,
       verbose: true,
     });
@@ -466,15 +469,15 @@ export async function identifyContent(req: Request, res: Response) {
       | ChatPromptTemplate<InputValues, string>
       | BaseMessagePromptTemplateLike = [
       "user",
-      `URL: {url},  Web Content: {input}`,
+      `URL: {url} \nWeb Content:  \n-----------\n{input}\n-----------\n`,
     ];
     let system1: BaseMessagePromptTemplateLike = [
       "system",
-      "You are an AI Scraper assistance build by MR Scraper, your task is to create the title for this web and tell user what data can be scraped from the web content given, please provide trully information what data can be scraped in readable format without any additional information that is no included in the web content user given. You should give an additional followup question to user at the end of exaplanation",
+      "You are an AI Scraper assistance build by MR Scraper, your task is to create the title for this web and tell user what data can be scraped from the web content given, please provide trully information what data can be scraped in readable format without any additional information that is no included in the web content user given. You should give an additional followup question to user at the end of exaplanation.",
     ];
     let systemGuard: BaseMessagePromptTemplateLike = [
       "system",
-      "!!IMPORTANT: \n PROVIDE: \n 1. Clear explanations with READABLE format!  \n  2. Follow-up questions to starting the conversation at the end of the explanation e.g 'Which data do you want to scrape? 3. Explanation How many data that can be scraped",
+      "!!IMPORTANT: \n PROVIDE: \n 1. Clear explanations with READABLE format!  \n  2. Follow-up questions to starting the conversation at the end of the explanation e.g 'Which data do you want to scrape? \n 3. Explanation How many data that can be scraped \n 4. list of pagination url of the web content if available. Do Not add any additional information that is not included in the web content user given.",
     ];
     let extractorSchema: FunctionDefinition = {
       name: "extractor",
@@ -489,7 +492,7 @@ export async function identifyContent(req: Request, res: Response) {
           content: {
             type: "string",
             description:
-              "information what data can be scraped without any additional information that is no included in the web content user given",
+              "list of data that can be scraped without any additional information that is no included in the web content user given",
           },
           followup: {
             type: "string",
@@ -498,9 +501,19 @@ export async function identifyContent(req: Request, res: Response) {
           },
           howMany: {
             type: "string",
-            description: "Explanation How many data that can be scraped",
+            description: "Extra explanation how many data that can be scraped",
+          },
+          pagination: {
+            type: "array",
+            description:
+              "list of pagination url of the web content if available! Please pass empty array if not available",
+            items: {
+              type: "string",
+              description: "pagination url",
+            },
           },
         },
+        required: ["title", "content", "followup"],
       },
     };
     if (isError) {
@@ -618,6 +631,8 @@ Analyze the image given by user, identify the problem as below:
       const aiMessage: BaseMessage = new AIOutputMessage(
         JSON.stringify({
           data_that_can_be_scraped: content,
+          // @ts-ignore
+          pagination: result?.pagination,
           usage_metadata: cost,
         }),
       );
