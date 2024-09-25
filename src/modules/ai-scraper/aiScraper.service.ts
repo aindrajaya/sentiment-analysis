@@ -29,7 +29,6 @@ import {
   countTokens,
   errorResponse,
   limitTokens,
-  streamAIV2Response,
   successResponse,
 } from "../../utils/helper.util.js";
 import {
@@ -66,6 +65,7 @@ import {
   convertSchemaToPrompt,
   fixParser,
   handleSchemaTypeNested,
+  streamAIV2Response,
 } from "../../utils/aiScraper.utils.js";
 import { PaginateTool } from "../../utils/langchain/tools/paginate.js";
 
@@ -196,7 +196,7 @@ export async function askAiV2(
       ["user", "{input}"],
       [
         "system",
-        "!!IMPORTANT DO NOT TO GIVE: \n 1. Information that is not included in the search results or history.. \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. You can tell the user the data may not meet their needs, or inform them that ScrapeGPT is still in beta version, and our developers are working hard to improve its performance. \n\n !!IMPORTANT: \n PROVIDE: \n 1. All information \n 2. Clear explanations \n 3. Extra descriptions \n 4. Readable JSON format with unique entries (make sure there is no repeated data) \n 5. Relevance to the input \n 6. Follow-up questions at the end of the explanation e.g 'Do you want to know more about this?' or  'Which data do you want to scrape?' or if there is link to detailed page you can ask user 'Would you like to scrape the detail?' ",
+        "!!IMPORTANT DO NOT TO GIVE: \n 1. Information that is not included in the search results or history.. \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. You can tell the user the data may not meet their needs, or inform them that ScrapeGPT is still in beta version, and our developers are working hard to improve its performance. \n\n !!IMPORTANT: \n PROVIDE: \n 1. All information as many as possible \n 2. Clear explanations and extra descriptions with follow-up questions at the end of the explanation e.g 'Do you want to know more about this?' or  'Which data do you want to scrape?' or if there is link to detailed page you can ask user 'Would you like to scrape the detail? \n 4. Readable JSON format with unique entries (make sure there is no repeated data) and snake_case key format \n 5. Relevance to the input \n' ",
       ],
       new MessagesPlaceholder("agent_scratchpad"),
     ]);
@@ -216,6 +216,7 @@ export async function askAiV2(
       prompt,
       finalResponseSchema,
       streamRunnable: streaming,
+      llmCallback,
     });
     const runnable = new AgentExecutor({
       agent,
@@ -243,6 +244,7 @@ export async function askAiV2(
         userId,
         sessionId,
         scraperId,
+        llmCallback,
       );
     } else {
       const result = await withHistory.invoke({ input: task }, config);
@@ -380,84 +382,6 @@ export async function askAIAPI(req: Request, res: Response) {
   }
 }
 
-export async function getSessions(req: Request, res: Response) {
-  try {
-    const { userId } =
-      req.params as unknown as AiScraperV2GetSessionsParamsRequest;
-    const memory = new MongoDBChatMessageHistory({ userId });
-    const result: AiScraperV2GetSessionsBodyResponse[] =
-      await memory.getSessions();
-    return successResponse(
-      res,
-      "Your sessions successfully netted",
-      result,
-      200,
-    );
-  } catch (error: any) {
-    console.error("Error", error);
-    return errorResponse(res, "Internal server error", error?.message, 500);
-  }
-}
-
-export async function getChatHistory(req: Request, res: Response) {
-  try {
-    const { userId, sessionId } =
-      req.params as unknown as AiScraperV2GetChatHistoryParamsRequest;
-    const memory = new MongoDBChatMessageHistory({ userId, sessionId });
-    const result: AiScraperV2GetChatHistoryBodyResponse =
-      await memory.getChatHistory();
-    return successResponse(res, "Hi, welcome back!", result, 200);
-  } catch (error: any) {
-    console.error("Error", error);
-    return errorResponse(res, "Internal server error", error?.message, 500);
-  }
-}
-
-export async function getConversationTokenUsage(req: Request, res: Response) {
-  try {
-    const { userId, sessionId } =
-      req.params as unknown as AiScraperV2GetChatHistoryParamsRequest;
-    const memory = new MongoDBChatMessageHistory({ userId, sessionId });
-    const result: AiScraperV2TokenUsageBodyResponse =
-      await memory.getConversationTokenUsage();
-    return successResponse(res, "success", result, 200);
-  } catch (error: any) {
-    console.error("Error", error);
-    return errorResponse(res, "Internal server error", error?.message, 500);
-  }
-}
-
-export async function migrateChatHistory(req: Request, res: Response) {
-  try {
-    const { userId, sessionId } =
-      req.params as unknown as AiScraperV2GetChatHistoryParamsRequest;
-    const { newUserId } =
-      req.body as unknown as AiScraperV2MigrateChatHistoryBodyRequest;
-    const memory = new MongoDBChatMessageHistory({ userId, sessionId });
-    const result = await memory.updateSessionOwnership(newUserId);
-    return successResponse(
-      res,
-      "Session migrated successfully",
-      { isUpdated: result },
-      200,
-    );
-  } catch (error: any) {
-    return errorResponse(res, "Internal server error", error?.message, 500);
-  }
-}
-
-export async function saveFinalAnswer(req: Request, res: Response) {
-  try {
-    const { userId, sessionId } = req.body as AiScraperV2FinalAnswerBodyRequest;
-    const memory = new MongoDBChatMessageHistory({ userId, sessionId });
-    const result = await memory.saveFinalAnswer();
-    return successResponse(res, "Final data already netted", result, 200);
-  } catch (error: any) {
-    console.error("Error", error);
-    return errorResponse(res, "Internal server error", error?.message, 500);
-  }
-}
-
 export async function identifyContent(req: Request, res: Response) {
   try {
     const { markdown, userId, url, screenshot, isError, httpStatus } =
@@ -477,7 +401,7 @@ export async function identifyContent(req: Request, res: Response) {
     ];
     let systemGuard: BaseMessagePromptTemplateLike = [
       "system",
-      "!!IMPORTANT: \n PROVIDE: \n 1. Clear explanations with READABLE format!  \n  2. Follow-up questions to starting the conversation at the end of the explanation e.g 'Which data do you want to scrape? \n 3. Explanation How many data that can be scraped \n 4. Include the pagination URL of the web content if available. Do not add the pagination URL if it is not included in the web content. Make sure it is a valid pagination URL with full url and not something else.",
+      "!!IMPORTANT: \n PROVIDE: \n 1. Clear explanations with READABLE format!  \n  2. Follow-up questions to starting the conversation at the end of the explanation e.g 'Which data do you want to scrape? \n 3. Extra Explanation and description how many data that can be scraped in current page \n 4. Include the pagination URL of the web content if available. Do not add the pagination URL if it is not included in the web content. Make sure it is a valid pagination URL with full url and not something else.",
     ];
     let extractorSchema: FunctionDefinition = {
       name: "extractor",
@@ -501,7 +425,8 @@ export async function identifyContent(req: Request, res: Response) {
           },
           howMany: {
             type: "string",
-            description: "Extra explanation how many data that can be scraped",
+            description:
+              "Extra explanation & description how many data that can be scraped in current page",
           },
           pagination: {
             type: "array",
@@ -513,7 +438,7 @@ export async function identifyContent(req: Request, res: Response) {
             },
           },
         },
-        required: ["title", "content", "followup"],
+        required: ["title", "content"],
       },
     };
     if (isError) {
@@ -586,7 +511,10 @@ Analyze the image given by user, identify the problem as below:
       systemGuard,
     ]);
 
-    const parser = new JsonOutputFunctionsParser();
+    const extractorSchemaZod = eval(
+      jsonSchemaToZod(extractorSchema.parameters),
+    );
+    const parser = StructuredOutputParser.fromZodSchema(extractorSchemaZod);
     let cost = {
       input_tokens: 0,
       output_tokens: 0,
@@ -597,7 +525,29 @@ Analyze the image given by user, identify the problem as below:
       inputTokens += usageMetadata.input_tokens;
       outputTokens += usageMetadata.output_tokens;
     };
-    const llmCallback = openAICallbackHandler(true, countTokens);
+    let answer = "";
+    const llmOutput = (
+      output: LLMResult,
+      runId: string,
+      parentRunId?: string,
+      tags?: string[],
+    ) => {
+      console.log(
+        "Output",
+        output.generations[0][0].message?.additional_kwargs?.function_call
+          ?.arguments,
+      );
+      answer =
+        output.generations[0][0].message?.additional_kwargs?.function_call
+          ?.arguments;
+    };
+
+    const llmCallback = openAICallbackHandler(
+      true,
+      countTokens,
+      () => {},
+      llmOutput,
+    );
     const chatModel = new ChatOpenAI({
       model: "gpt-4o-mini",
       temperature: 0,
@@ -606,17 +556,35 @@ Analyze the image given by user, identify the problem as below:
       function_call: { name: "extractor" },
       callbacks: [llmCallback],
     });
-    const llmChain = prompt.pipe(chatModel).pipe(parser);
-    let content = "";
+    const llmChain = RunnableSequence.from([prompt, chatModel, parser]);
     let result;
-    if (!isError) {
-      result = await llmChain.invoke({ input: context, url });
-      // @ts-ignore
+    let content = "";
+    try {
+      if (!isError) {
+        result = await llmChain.invoke({
+          input: context,
+          url,
+          format_instructions: parser.getFormatInstructions(),
+        });
+        // @ts-ignore
+        content = `#${result?.title}\n\n${result?.content}\n\n${result?.howMany}\n${result?.followup}`;
+      } else {
+        result = await llmChain.invoke({
+          screenshot,
+          httpStatus,
+          format_instructions: parser.getFormatInstructions(),
+        });
+        // @ts-ignore
+        content = `#${result.title}\n\n${result.problem}\n\n${result.solution}\n\n${result.howTo}\n\n${result.impact}`;
+      }
+    } catch (error: any) {
+      console.error("Error parsing json result", error);
+      console.log("Answer", answer);
+
+      result = await fixParser(parser, answer, llmCallback);
+
       content = `#${result?.title}\n\n${result?.content}\n\n${result?.howMany}\n${result?.followup}`;
-    } else {
-      result = await llmChain.invoke({ screenshot, httpStatus });
-      // @ts-ignore
-      content = `#${result.title}\n\n${result.problem}\n\n${result.solution}\n\n${result.howTo}\n\n${result.impact}`;
+      console.log("Fixed Result", result);
     }
     console.log("\nAnswer:\n", result);
     const output = result;
@@ -631,7 +599,6 @@ Analyze the image given by user, identify the problem as below:
       const aiMessage: BaseMessage = new AIOutputMessage(
         JSON.stringify({
           data_that_can_be_scraped: content,
-          // @ts-ignore
           pagination: result?.pagination,
           usage_metadata: cost,
         }),
@@ -650,6 +617,84 @@ Analyze the image given by user, identify the problem as below:
         200,
       );
     }
+  } catch (error: any) {
+    console.error("Error", error);
+    return errorResponse(res, "Internal server error", error?.message, 500);
+  }
+}
+
+export async function getSessions(req: Request, res: Response) {
+  try {
+    const { userId } =
+      req.params as unknown as AiScraperV2GetSessionsParamsRequest;
+    const memory = new MongoDBChatMessageHistory({ userId });
+    const result: AiScraperV2GetSessionsBodyResponse[] =
+      await memory.getSessions();
+    return successResponse(
+      res,
+      "Your sessions successfully netted",
+      result,
+      200,
+    );
+  } catch (error: any) {
+    console.error("Error", error);
+    return errorResponse(res, "Internal server error", error?.message, 500);
+  }
+}
+
+export async function getChatHistory(req: Request, res: Response) {
+  try {
+    const { userId, sessionId } =
+      req.params as unknown as AiScraperV2GetChatHistoryParamsRequest;
+    const memory = new MongoDBChatMessageHistory({ userId, sessionId });
+    const result: AiScraperV2GetChatHistoryBodyResponse =
+      await memory.getChatHistory();
+    return successResponse(res, "Hi, welcome back!", result, 200);
+  } catch (error: any) {
+    console.error("Error", error);
+    return errorResponse(res, "Internal server error", error?.message, 500);
+  }
+}
+
+export async function getConversationTokenUsage(req: Request, res: Response) {
+  try {
+    const { userId, sessionId } =
+      req.params as unknown as AiScraperV2GetChatHistoryParamsRequest;
+    const memory = new MongoDBChatMessageHistory({ userId, sessionId });
+    const result: AiScraperV2TokenUsageBodyResponse =
+      await memory.getConversationTokenUsage();
+    return successResponse(res, "success", result, 200);
+  } catch (error: any) {
+    console.error("Error", error);
+    return errorResponse(res, "Internal server error", error?.message, 500);
+  }
+}
+
+export async function migrateChatHistory(req: Request, res: Response) {
+  try {
+    const { userId, sessionId } =
+      req.params as unknown as AiScraperV2GetChatHistoryParamsRequest;
+    const { newUserId } =
+      req.body as unknown as AiScraperV2MigrateChatHistoryBodyRequest;
+    const memory = new MongoDBChatMessageHistory({ userId, sessionId });
+    const result = await memory.updateSessionOwnership(newUserId);
+    return successResponse(
+      res,
+      "Session migrated successfully",
+      { isUpdated: result },
+      200,
+    );
+  } catch (error: any) {
+    return errorResponse(res, "Internal server error", error?.message, 500);
+  }
+}
+
+export async function saveFinalAnswer(req: Request, res: Response) {
+  try {
+    const { userId, sessionId } = req.body as AiScraperV2FinalAnswerBodyRequest;
+    const memory = new MongoDBChatMessageHistory({ userId, sessionId });
+    const result = await memory.saveFinalAnswer();
+    return successResponse(res, "Final data already netted", result, 200);
   } catch (error: any) {
     console.error("Error", error);
     return errorResponse(res, "Internal server error", error?.message, 500);
