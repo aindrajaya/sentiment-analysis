@@ -216,7 +216,6 @@ export async function askAiV2(
       prompt,
       finalResponseSchema,
       streamRunnable: streaming,
-      llmCallback,
     });
     const runnable = new AgentExecutor({
       agent,

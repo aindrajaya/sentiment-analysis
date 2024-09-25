@@ -142,9 +142,13 @@ export async function streamAIV2Response(
           result.json = json;
         } catch (error) {
           if (typeof content == "string") {
-            const parser =
-              StructuredOutputParser.fromZodSchema(conversationSchema);
-            result = await fixParser(parser, content as string, llmCallback!);
+            if (content.includes("```json")) {
+              const parser =
+                StructuredOutputParser.fromZodSchema(conversationSchema);
+              result = await fixParser(parser, content as string, llmCallback!);
+            } else {
+              result.desc = content;
+            }
           }
         }
         await callMrScraperTokenWebhook(userId, sessionId, scraperId);
