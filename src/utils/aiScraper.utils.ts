@@ -6,7 +6,11 @@ import {
   AiScraperV2BodyResponse,
 } from "../modules/ai-scraper/types/interface.js";
 import { ChatOpenAI } from "@langchain/openai";
-import { PromptTemplate, ChatPromptTemplate } from "@langchain/core/prompts";
+import {
+  PromptTemplate,
+  ChatPromptTemplate,
+  MessagesPlaceholder,
+} from "@langchain/core/prompts";
 import { OpenAICallbackHandlerReturn } from "./langchain/callbacks/llm/openAiCb.js";
 import { JsonOutputParser } from "@langchain/core/output_parsers";
 import { jsonSchemaToZod } from "json-schema-to-zod";
@@ -18,12 +22,112 @@ import { RunLogPatch } from "@langchain/core/tracers/log_stream";
 import { ChatGenerationChunk } from "@langchain/core/outputs";
 import { AIMessageChunk } from "@langchain/core/messages";
 import axios from "axios";
-import { MongoDBChatMessageHistory } from "./memory/chat_history.js";
+import { MongoDBChatMessageHistory } from "./memory/chatHistory.js";
 import {
   platformApiUrl,
   platformWebhookSecret,
 } from "../configs/general.config.js";
 import { OutputFixingParser } from "./langchain/parser/outputFixingParser.js";
+import type { BaseMessagePromptTemplateLike } from "@langchain/core/prompts";
+import type { InputValues } from "@langchain/core/utils/types";
+import { FunctionDefinition } from "@langchain/core/language_models/base";
+import { JsonOutputFunctionsParser } from "langchain/output_parsers";
+import { UsageMetadata } from "./langchain/callbacks/llm/types/interfacte.js";
+import { limitTokens } from "./helper.util.js";
+
+export async function batchAnswer(
+  fields: {
+    markdown: string;
+    url: string;
+    question: string;
+    contentIdentifier: string;
+  },
+  llmCallback: OpenAICallbackHandlerReturn,
+  responseCallback: (data: object, isFinal: boolean) => void,
+) {
+  const { markdown, url, question, contentIdentifier } = fields;
+  try {
+    const context = limitTokens(markdown, 125_000);
+    let user:
+      | ChatPromptTemplate<InputValues, string>
+      | BaseMessagePromptTemplateLike = [
+      "user",
+      `I need: {q} \nFrom this web content as many as possible (MINIMUM: 1, MAXIMUM: 100):  \n-----------\n{input}\n-----------\n`,
+    ];
+    let system1: BaseMessagePromptTemplateLike = [
+      "system",
+      `You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape/get from available web content at ${url}, you can use available tools that will help you to answer. And if user ask to get all of data, you should give them all item and all data field like this ${contentIdentifier}.`,
+    ];
+    let systemGuard: BaseMessagePromptTemplateLike = [
+      "system",
+      "!!IMPORTANT DO NOT TO GIVE: \n 1. Information that is not included in the search results or history.. \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. You can tell the user the data may not meet their needs, or inform them that ScrapeGPT is still in beta version, and our developers are working hard to improve its performance. \n\n !!IMPORTANT: \n PROVIDE: \n 1. All information as many as possible  \n 2. Readable JSON format with unique entries (make sure there is no repeated data) and snake_case key format  \n 3. Make sure you give the data as many as posible MINIMUM: 1, MAXIMUM: 100",
+    ];
+    let extractorSchema: FunctionDefinition = {
+      name: "response",
+      description: "Batch Response",
+      parameters: {
+        type: "object",
+        properties: {
+          metadata: {
+            type: "object",
+            description:
+              "metadata of the extracted data, it can be the url, title, page number, etc.",
+            properties: {
+              url: {
+                type: "string",
+                description: "the url of the page",
+              },
+              title: {
+                type: "string",
+                description: "the title of the page",
+              },
+              page_number: {
+                type: "number",
+                description: "the page number of the page",
+              },
+            },
+          },
+          json: {
+            type: "string",
+            description:
+              "the json format of scraped data, !IMPORTANT should in json markdown format like ```json RESULT_HERE ```, make sure the json is in pretty with multiple line and readable.",
+          },
+        },
+      },
+    };
+
+    const prompt = ChatPromptTemplate.fromMessages([
+      system1,
+      user,
+      systemGuard,
+    ]);
+
+    const parser = new JsonOutputFunctionsParser();
+    const chatModel = new ChatOpenAI({
+      model: "gpt-4o-mini",
+      temperature: 0,
+    }).bind({
+      callbacks: [llmCallback],
+      functions: [extractorSchema],
+      function_call: { name: "response" },
+    });
+    const llmChain = prompt.pipe(chatModel).pipe(parser);
+    let result;
+    result = await llmChain.stream({
+      q: question,
+      input: context,
+    });
+    let finalAnswer;
+    for await (const chunk of result) {
+      responseCallback(chunk, false);
+      finalAnswer = chunk;
+    }
+    responseCallback(finalAnswer!, true);
+  } catch (e) {
+    console.error(e);
+  }
+}
+
 export async function streamAIV2Response(
   logStream: AsyncGenerator<RunLogPatch>,
   callback: (data: AiScraperV2BodyResponse, isFinal: boolean) => void,
