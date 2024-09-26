@@ -4,7 +4,7 @@ import { Request, Response } from "express";
 import { z } from "zod";
 import { jsonSchemaToZod } from "json-schema-to-zod";
 // ================= Langhchain libs ====================
-import { BaseMessage, HumanMessage } from "@langchain/core/messages";
+import { BaseMessage, HumanMessage, AIMessage } from "@langchain/core/messages";
 import { CohereRerank } from "@langchain/cohere";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
@@ -23,7 +23,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { StructuredOutputParser } from "langchain/output_parsers";
 import { RunnableSequence } from "@langchain/core/runnables";
 // ================== Internal libs =====================
-import { MongoDBChatMessageHistory } from "../../utils/memory/chat_history.js";
+import { MongoDBChatMessageHistory } from "../../utils/memory/chatHistory.js";
 import {
   countTokens,
   errorResponse,
@@ -60,6 +60,7 @@ import openAICallbackHandler from "../../utils/langchain/callbacks/llm/openAiCb.
 import { AIOutputMessage } from "../../utils/langchain/message/ai.js";
 import { SearchNestedWebContentTool } from "../../utils/langchain/tools/searchNestedWebContent.js";
 import {
+  batchAnswer,
   clearSchema,
   convertSchemaToPrompt,
   fixParser,
@@ -176,9 +177,26 @@ export async function askAiV2(
       memory.addSessionUsageMetadata(usageMetadata);
     };
     const llmCallback = openAICallbackHandler(true, countTokens);
+    const batchAnswers: string[] = [];
+    const splitAnswer = async (
+      markdown: string,
+      url: string,
+      question: string,
+    ) =>
+      await batchAnswer(
+        { markdown, url, question, contentIdentifier },
+        llmCallback,
+        async (data: object, isFinal) => {
+          console.log("Chunk Answer", data, isFinal);
+          callback(data as unknown as AiScraperV2BodyResponse, isFinal);
+          if (isFinal) {
+            batchAnswers.push(JSON.stringify(data));
+          }
+        },
+      );
     const tools = [
       SearchNestedWebContentTool(apiKey),
-      PaginateTool(apiKey),
+      PaginateTool(apiKey, splitAnswer),
       new SearchWebContentTool(pageContent),
     ];
     const model = new ChatOpenAI({
@@ -219,7 +237,6 @@ export async function askAiV2(
     });
     const runnable = new AgentExecutor({
       agent,
-      // @ts-ignore
       tools,
       verbose: true,
     });
@@ -229,6 +246,11 @@ export async function askAiV2(
       inputMessagesKey: "input",
       historyMessagesKey: "chat_history",
       outputMessagesKey: "output",
+      onExitHistory: async (conversationId: number) => {
+        if (batchAnswers.length > 0) {
+          await memory.addBatchAnswer(batchAnswers, conversationId);
+        }
+      },
     });
 
     const config: RunnableConfig = {
