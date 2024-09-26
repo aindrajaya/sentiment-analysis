@@ -1,18 +1,59 @@
-import { BaseListChatMessageHistory } from "@langchain/core/chat_history";
-
 import type { StoredMessage, BaseMessage } from "@langchain/core/messages";
-import { mapChatMessagesToStoredMessages } from "@langchain/core/messages";
+import { AIMessage } from "@langchain/core/messages";
 import {
-  mapStoredMessageToChatMessage,
+  mapChatMessagesToStoredMongoMessages,
   mapStoredMessagesToChatMessages,
 } from "./libs/utils.js";
+import { mapChatMessagesToStoredMessages } from "@langchain/core/messages";
+import { Serializable } from "@langchain/core/load/serializable";
 import { Collection, Document, ObjectId, PushOperator } from "mongodb";
 import { Document as ChainDoc } from "@langchain/core/documents";
 import { db } from "../../configs/databases/mongodb.db.js";
 import { UsageMetadata } from "../langchain/callbacks/llm/types/interfacte.js";
+
 interface MongoDBChatMessageHistoryProps {
   sessionId?: string;
   userId: string;
+  chatId?: number;
+}
+
+export abstract class BaseListChatMessageHistory extends Serializable {
+  /** Returns a list of messages stored in the store. */
+  abstract getMessages(): Promise<BaseMessage[]>;
+  /**
+   * Add a message object to the store.
+   */
+  abstract addMessage(message: BaseMessage, ...props: any): Promise<any>;
+
+  /**
+   * This is a convenience method for adding an AI message string to the store.
+   * Please note that this is a convenience method. Code should favor the bulk
+   * addMessages interface instead to save on round-trips to the underlying
+   * persistence layer.
+   * This method may be deprecated in a future release.
+   */
+  addAIMessage(message: string): Promise<void> {
+    return this.addMessage(new AIMessage(message));
+  }
+  /**
+   * Add a list of messages.
+   *
+   * Implementations should override this method to handle bulk addition of messages
+   * in an efficient manner to avoid unnecessary round-trips to the underlying store.
+   *
+   * @param messages - A list of BaseMessage objects to store.
+   */
+  async addMessages(messages: BaseMessage[]): Promise<any> {
+    for (const message of messages) {
+      await this.addMessage(message);
+    }
+  }
+  /**
+   * Remove all messages from the store.
+   */
+  clear(): Promise<void> {
+    throw new Error("Method not implemented.");
+  }
 }
 
 /** HACK: SOME DATA SCHEMA DETAILS:
@@ -62,9 +103,10 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
   collection: Collection<ChatDocument>; // Adjust this type according to your MongoDB collection type
   sessionId: ObjectId;
   userId: string;
+  chatId?: number;
   idKey: string = "_id";
 
-  constructor({ sessionId, userId }: MongoDBChatMessageHistoryProps) {
+  constructor({ sessionId, userId, chatId }: MongoDBChatMessageHistoryProps) {
     super();
     this.collection = db!.collection("memory") as Collection<ChatDocument>;
     if (!sessionId) {
@@ -72,7 +114,9 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
     } else {
       this.sessionId = new ObjectId(sessionId);
     }
+
     console.log("sessionId", sessionId);
+    this.chatId = chatId;
     this.userId = userId;
     console.log("userId", userId);
   }
@@ -221,6 +265,16 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
     return mapStoredMessagesToChatMessages(messages);
   }
 
+  async getMessagesLength() {
+    const document = await this.collection.findOne({
+      userId: this.userId,
+      [this.idKey]: this.sessionId,
+      "messages.type": "ai",
+    });
+    const messages = document?.messages || [];
+    return messages.length;
+  }
+
   async addSessionUsageMetadata(metadata: UsageMetadata) {
     console.log("update metadata", metadata);
     if (metadata) {
@@ -240,9 +294,9 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
     }
   }
 
-  async addMessage(message: BaseMessage) {
+  async addMessage(message: BaseMessage, id: number): Promise<number> {
     console.log("update message", message);
-    const chats = mapChatMessagesToStoredMessages([message]);
+    const chats = mapChatMessagesToStoredMongoMessages([message], id);
     await this.collection.updateOne(
       { [this.idKey]: this.sessionId, userId: this.userId },
       {
@@ -252,6 +306,57 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
       },
       { upsert: true },
     );
+
+    return id;
+  }
+
+  async addMessages(messages: BaseMessage[], id?: number): Promise<any> {
+    if (!id) id = (await this.getMessagesLength()) + 1;
+    for (const message of messages) {
+      await this.addMessage(message, id);
+    }
+    return id;
+  }
+
+  async addBatchAnswer(answers: string[], id: number): Promise<void> {
+    console.log("Attempting to update batch answer ", JSON.stringify(answers));
+
+    const message = await this.collection.findOne({
+      [this.idKey]: this.sessionId,
+      userId: this.userId,
+      "messages.id": id,
+      "messages.type": "ai",
+    });
+
+    if (!message) {
+      console.log(
+        `Message with id ${id} not found in session ${this.sessionId}`,
+      );
+      return;
+    }
+
+    const updateResult = await this.collection.updateOne(
+      {
+        [this.idKey]: this.sessionId,
+        userId: this.userId,
+        "messages.id": id,
+        "messages.type": "ai",
+      },
+      {
+        $set: {
+          "messages.$[chat].batchAnswers": answers,
+        },
+      },
+      { arrayFilters: [{ "chat.id": id }], upsert: true },
+    );
+
+    if (updateResult.matchedCount === 0) {
+      console.log(`No matching message found to update with id ${id}`);
+    } else if (updateResult.modifiedCount === 0) {
+      console.log(`Message was found, but no changes were made.`);
+    } else {
+      console.log(`Successfully updated message with id ${id}`);
+    }
   }
 
   async clear() {
