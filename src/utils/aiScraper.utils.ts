@@ -32,7 +32,6 @@ import type { BaseMessagePromptTemplateLike } from "@langchain/core/prompts";
 import type { InputValues } from "@langchain/core/utils/types";
 import { FunctionDefinition } from "@langchain/core/language_models/base";
 import { JsonOutputFunctionsParser } from "langchain/output_parsers";
-import { UsageMetadata } from "./langchain/callbacks/llm/types/interfacte.js";
 import { limitTokens } from "./helper.util.js";
 
 export async function batchAnswer(
@@ -52,15 +51,25 @@ export async function batchAnswer(
       | ChatPromptTemplate<InputValues, string>
       | BaseMessagePromptTemplateLike = [
       "user",
-      `I need: {q} \nFrom this web content as many as possible (MINIMUM: 1, MAXIMUM: 100):  \n-----------\n{input}\n-----------\n`,
+      `I need: {q} \nFrom this web content as many as possible: \n-----------\n{input}\n-----------\n`,
     ];
     let system1: BaseMessagePromptTemplateLike = [
       "system",
-      `You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape/get from available web content at ${url}, you can use available tools that will help you to answer. And if user ask to get all of data, you should give them all item and all data field like this ${contentIdentifier}.`,
+      `You are an AI Scraper Assistant developed by MR Scraper. Your task is to extract the data the user requests from available web content at ${url}. If the user asks for all data, provide every item and field, ensuring it matches the structure specified in ${contentIdentifier}. ensure you provide as much data as possible, with a minimum of 1 and a maximum of 100 items, ensuring each entry is unique and relevant to the request.`,
     ];
     let systemGuard: BaseMessagePromptTemplateLike = [
       "system",
-      "!!IMPORTANT DO NOT TO GIVE: \n 1. Information that is not included in the search results or history.. \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. You can tell the user the data may not meet their needs, or inform them that ScrapeGPT is still in beta version, and our developers are working hard to improve its performance. \n\n !!IMPORTANT: \n PROVIDE: \n 1. All information as many as possible  \n 2. Readable JSON format with unique entries (make sure there is no repeated data) and snake_case key format  \n 3. Make sure you give the data as many as posible MINIMUM: 1, MAXIMUM: 100",
+      `IMPORTANT!: DO NOT provide:
+1. Information that is not included in the search results or chat history.
+2. Repeated or duplicate JSON entries. Ensure all results are unique. 
+
+IMPORTANT!: Ensure you PROVIDE:
+1. As much relevant information as possible, clearly explaining the results.
+2. Unique, non-repeated entries in snake_case JSON format.
+3. A clear and structured response, with relevance to the user's input.
+
+Begin! Reminder to ALWAYS respond with a valid json format. 
+`,
     ];
     let extractorSchema: FunctionDefinition = {
       name: "response",

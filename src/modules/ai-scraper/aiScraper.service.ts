@@ -20,7 +20,10 @@ import {
 import { JsonOutputParser } from "@langchain/core/output_parsers";
 import { FunctionDefinition } from "@langchain/core/language_models/base";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { StructuredOutputParser } from "langchain/output_parsers";
+import {
+  JsonOutputFunctionsParser,
+  StructuredOutputParser,
+} from "langchain/output_parsers";
 import { RunnableSequence } from "@langchain/core/runnables";
 // ================== Internal libs =====================
 import { MongoDBChatMessageHistory } from "../../utils/memory/chatHistory.js";
@@ -208,17 +211,38 @@ export async function askAiV2(
     const prompt = ChatPromptTemplate.fromMessages([
       [
         "system",
-        `You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape/get from available web content at ${webPage}, you can use available tools that will help you to answer. And if user ask to get all of data, you should give them all item and all data field like this ${contentIdentifier}. \n\n IMPORTANT!! if user ask to get data from pagination page, ${pagination && Array.isArray(pagination) && pagination.length > 0 ? "ensure you use this pagintaion url" + JSON.stringify(pagination) : "please tell there is no Pagination Found"} else just use search tool. \n\n NOTE: Currently your in a beta version so you still in learning proccess to get better scraping data.`,
+        `You are an AI Scraper Assistant developed by MR Scraper. Your task is to extract the data the user requests from available web content at ${webPage}. If the user asks for all data, provide every item and field, ensuring it matches the structure specified in ${contentIdentifier}. ensure you provide as much data as possible, with a minimum of 1 and a maximum of 100 items, ensuring each entry is unique and relevant to the request.
+
+IMPORTANT: If the user requests data from paginated content, ${pagination && Array.isArray(pagination) && pagination.length > 0 ? "ensure you use the following pagination URLs: " + JSON.stringify(pagination) : "notify the user that no pagination was found"}. Otherwise, use the search-web-content-tool to gather information. 
+
+You have access to the following tools:
+
+${tools.map((tool) => `- ${tool.name}( ${tool.description} )`).join("\n")}
+
+NOTE: You are currently in a beta phase, and your performance will improve over time as you continue learning to scrape data effectively.`,
       ],
       new MessagesPlaceholder("chat_history"),
       ["user", "{input}"],
       [
         "system",
-        "!!IMPORTANT DO NOT TO GIVE: \n 1. Information that is not included in the search results or history.. \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. You can tell the user the data may not meet their needs, or inform them that ScrapeGPT is still in beta version, and our developers are working hard to improve its performance. \n\n !!IMPORTANT: \n PROVIDE: \n 1. All information as many as possible \n 2. Clear explanations and extra descriptions with follow-up questions at the end of the explanation e.g 'Do you want to know more about this?' or  'Which data do you want to scrape?' or if there is link to detailed page you can ask user 'Would you like to scrape the detail? \n 4. Readable JSON format with unique entries (make sure there is no repeated data) and snake_case key format \n 5. Relevance to the input \n' ",
+        `IMPORTANT!: DO NOT provide:
+1. Information that is not included in the search results or chat history.
+2. Repeated or duplicate JSON entries. Ensure all results are unique. 
+If the data doesn't fully meet user expectations, inform them that ScrapeGPT is in beta and improvements are ongoing.
+
+IMPORTANT!: Ensure you PROVIDE:
+1. As much relevant information as possible, clearly explaining the results. If you cannot provide all available data, include a disclaimer that the data shown is a sample, and inform the user that they can request more by specifying the number of items they would like to get.
+2. Unique, non-repeated entries in snake_case JSON format.
+3. Relevant follow-up questions like: 'Would you like more details on this?' or 'Which specific data do you want to scrape?' If detailed pages are available, ask, 'Would you like to scrape the detail?'
+4. A clear and structured response, with relevance to the user's input.
+
+Begin! Reminder to ALWAYS respond with a valid json format {{desc: YOUR_ANSWER, json: STRING_JSON_RESULT }}. Use tools if necessary. Respond directly if appropriate.
+
+`,
       ],
       new MessagesPlaceholder("agent_scratchpad"),
     ]);
-    model.pipe(new JsonOutputParser());
+    model.pipe(new JsonOutputFunctionsParser());
 
     const finalResponseSchema = z.object({
       desc: z.string().describe("The explanation of scraped data"),
@@ -249,6 +273,10 @@ export async function askAiV2(
       onExitHistory: async (conversationId: number) => {
         if (batchAnswers.length > 0) {
           await memory.addBatchAnswer(batchAnswers, conversationId);
+          // await memory.updateAiAnswer(
+          //   JSON.stringify(batchAnswers),
+          //   conversationId,
+          // );
         }
       },
     });
@@ -258,6 +286,14 @@ export async function askAiV2(
     };
 
     if (streaming) {
+      const streamCallback = (
+        data: AiScraperV2BodyResponse,
+        isFinal: boolean,
+      ) => {
+        if (isFinal) {
+        }
+        return callback(data, isFinal);
+      };
       const logStream = await withHistory.streamLog({ input: task }, config);
       await streamAIV2Response(
         logStream,

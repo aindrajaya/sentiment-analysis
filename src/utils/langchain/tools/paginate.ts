@@ -17,7 +17,11 @@ export const PaginateTool = (
       "Tool used when you need to get web content from multiple pages",
     schema: z.object({
       urls: z.array(z.string()),
-      question: z.string().describe("Clear question for each page"),
+      question: z
+        .string()
+        .describe(
+          "Clear question for each page, with the specific number of data if exists.",
+        ),
     }),
     func: async ({ urls, question }) => {
       console.log("urls", urls);
@@ -43,7 +47,7 @@ export const PaginateTool = (
           index++;
         }
 
-        return "The content is too long, so tell user it has been sent in batches!. IMPORTANT! Don't give any json again!, just say it has been sent in batches!";
+        return "All data has been successfully scraped and the content is too long, so tell user it has been sent in batches!. IMPORTANT! Don't give any json again! or call any function again, just say it has been sent in batches!";
       }
 
       return JSON.stringify(markdown);
