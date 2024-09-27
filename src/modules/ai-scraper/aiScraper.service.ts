@@ -286,18 +286,21 @@ Begin! Reminder to ALWAYS respond with a valid json format {{desc: YOUR_ANSWER, 
     };
 
     if (streaming) {
-      const streamCallback = (
+      const streamCallback = async (
         data: AiScraperV2BodyResponse,
         isFinal: boolean,
+        isFixed: boolean = false,
       ) => {
-        if (isFinal) {
+        if (isFinal && isFixed) {
+          const id = (await memory.getMessagesLength()) + 1;
+          await memory.updateAiAnswer(JSON.stringify(data), id);
         }
         return callback(data, isFinal);
       };
       const logStream = await withHistory.streamLog({ input: task }, config);
       await streamAIV2Response(
         logStream,
-        callback,
+        streamCallback,
         userId,
         sessionId,
         scraperId,
