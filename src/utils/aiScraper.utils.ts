@@ -59,16 +59,15 @@ export async function batchAnswer(
     ];
     let systemGuard: BaseMessagePromptTemplateLike = [
       "system",
-      `IMPORTANT!: DO NOT provide:
-1. Information that is not included in the search results or chat history.
+      `!!IMPORTANT: DO NOT provide:
+1. Information that is not included in the web content 
 2. Repeated or duplicate JSON entries. Ensure all results are unique. 
 
-IMPORTANT!: Ensure you PROVIDE:
-1. As much relevant information as possible, clearly explaining the results.
-2. Unique, non-repeated entries in snake_case JSON format.
-3. A clear and structured response, with relevance to the user's input.
 
-Begin! Reminder to ALWAYS respond with a valid json format. 
+!!IMPORTANT: Ensure you PROVIDE:
+1. All information as many as possible 
+2. Readable JSON format with unique entries (make sure there is no repeated data) and snake_case key format
+3. Make sure you give the data as many as posible MINIMUM: 1, MAXIMUM: 100 
 `,
     ];
     let extractorSchema: FunctionDefinition = {
@@ -139,7 +138,11 @@ Begin! Reminder to ALWAYS respond with a valid json format.
 
 export async function streamAIV2Response(
   logStream: AsyncGenerator<RunLogPatch>,
-  callback: (data: AiScraperV2BodyResponse, isFinal: boolean) => void,
+  callback: (
+    data: AiScraperV2BodyResponse,
+    isFinal: boolean,
+    isFixed?: boolean,
+  ) => void,
   userId: string,
   sessionId: string,
   scraperId: string,
@@ -239,6 +242,7 @@ export async function streamAIV2Response(
     ) {
       const replaceOp = chunk.ops[0];
       const content = replaceOp.value?.output;
+      let isFixed = false;
 
       if (content) {
         console.log("content", content);
@@ -259,13 +263,14 @@ export async function streamAIV2Response(
               const parser =
                 StructuredOutputParser.fromZodSchema(conversationSchema);
               result = await fixParser(parser, content as string, llmCallback!);
+              isFixed = true;
             } else {
               result.desc = content;
             }
           }
         }
         await callMrScraperTokenWebhook(userId, sessionId, scraperId);
-        callback(result, true);
+        callback(result, true, isFixed);
       }
     }
   }
