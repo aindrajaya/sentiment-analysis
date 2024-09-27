@@ -318,6 +318,47 @@ export class MongoDBChatMessageHistory extends BaseListChatMessageHistory {
     return id;
   }
 
+  async updateAiAnswer(answer: string, id: number): Promise<void> {
+    console.log("Attempting to update ai answer ", answer);
+
+    const message = await this.collection.findOne({
+      [this.idKey]: this.sessionId,
+      userId: this.userId,
+      "messages.id": id,
+      "messages.type": "ai",
+    });
+
+    if (!message) {
+      console.log(
+        `Message with id ${id} not found in session ${this.sessionId}`,
+      );
+      return;
+    }
+
+    const updateResult = await this.collection.updateOne(
+      {
+        [this.idKey]: this.sessionId,
+        userId: this.userId,
+        "messages.id": id,
+        "messages.type": "ai",
+      },
+      {
+        $set: {
+          "messages.$[chat].data.content": answer,
+        },
+      },
+      { arrayFilters: [{ "chat.id": id }], upsert: true },
+    );
+
+    if (updateResult.matchedCount === 0) {
+      console.log(`No matching message found to update with id ${id}`);
+    } else if (updateResult.modifiedCount === 0) {
+      console.log(`Message was found, but no changes were made.`);
+    } else {
+      console.log(`Successfully updated message with id ${id}`);
+    }
+  }
+
   async addBatchAnswer(answers: string[], id: number): Promise<void> {
     console.log("Attempting to update batch answer ", JSON.stringify(answers));
 
