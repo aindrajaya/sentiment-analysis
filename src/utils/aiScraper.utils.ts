@@ -11,7 +11,9 @@ import {
   ChatPromptTemplate,
   MessagesPlaceholder,
 } from "@langchain/core/prompts";
-import { OpenAICallbackHandlerReturn } from "./langchain/callbacks/llm/openAiCb.js";
+import openAICallbackHandler, {
+  OpenAICallbackHandlerReturn,
+} from "./langchain/callbacks/llm/openAiCb.js";
 import { JsonOutputParser } from "@langchain/core/output_parsers";
 import { jsonSchemaToZod } from "json-schema-to-zod";
 import { SearchNestedWebContentTool } from "./langchain/tools/searchNestedWebContent.js";
@@ -33,6 +35,130 @@ import type { InputValues } from "@langchain/core/utils/types";
 import { FunctionDefinition } from "@langchain/core/language_models/base";
 import { JsonOutputFunctionsParser } from "langchain/output_parsers";
 import { limitTokens } from "./helper.util.js";
+import {
+  LLMResult,
+  UsageMetadata,
+} from "./langchain/callbacks/llm/types/interfacte.js";
+import { RunnableSequence } from "@langchain/core/runnables";
+
+export async function getPaginationInfo(
+  markdown: string,
+  tokenUsageCb: (usageMetadata: UsageMetadata) => void,
+) {
+  try {
+    const prompt = ChatPromptTemplate.fromMessages([
+      [
+        "system",
+        "You are an AI assistant designed by MrScraper and have a task to extract all pagination URLs from markdown content and output them as JSON. Your task is to parse the markdown, find every pagination URL, and return them in a structured JSON format",
+      ],
+      ["user", "Markdown content:\n-----------\n{input}\n-----------\n"],
+      new MessagesPlaceholder("format_instructions"),
+      [
+        "system",
+        `IMPORTANT!: DO NOT provide:
+1. Information that is not included in the search results or chat history.
+2. Repeated or duplicate JSON entries. Ensure all results are unique. 
+
+IMPORTANT!: Ensure you PROVIDE:
+1. Only give the data if it available, include a valid pagination URL. Ensure it is the full and correct URL. Do not include a pagination URL if it is not present in the markdown content user given.
+`,
+      ],
+    ]);
+    let extractorSchema: FunctionDefinition = {
+      name: "extractor",
+      description: "Extracts fields from the input.",
+      parameters: {
+        type: "object",
+        properties: {
+          pagination: {
+            type: "array",
+            description:
+              "list of pagination-related url of the web content if available! Please pass empty array if not available",
+            items: {
+              type: "object",
+              description: "pagination information",
+              properties: {
+                text: {
+                  type: "string",
+                  description: "text associated with the pagination url",
+                },
+                url: {
+                  type: "string",
+                  description: "the url of the pagination",
+                },
+              },
+            },
+          },
+        },
+        required: ["title", "content"],
+      },
+    };
+
+    const extractorSchemaZod = eval(
+      jsonSchemaToZod(extractorSchema.parameters),
+    );
+    const parser = StructuredOutputParser.fromZodSchema(extractorSchemaZod);
+
+    let answer = "";
+    const llmOutput = (
+      output: LLMResult,
+      runId: string,
+      parentRunId?: string,
+      tags?: string[],
+    ) => {
+      console.log(
+        "Output",
+        output.generations[0][0].message?.additional_kwargs?.function_call
+          ?.arguments,
+      );
+      answer =
+        output.generations[0][0].message?.additional_kwargs?.function_call
+          ?.arguments;
+    };
+
+    const llmCallback = openAICallbackHandler(
+      true,
+      tokenUsageCb,
+      () => {},
+      llmOutput,
+    );
+    const chatModel = new ChatOpenAI({
+      model: "gpt-4o-mini",
+      temperature: 0,
+    }).bind({
+      functions: [extractorSchema],
+      function_call: { name: "extractor" },
+      callbacks: [llmCallback],
+    });
+    const llmChain = RunnableSequence.from([prompt, chatModel, parser]);
+    let result;
+    let content = "";
+    try {
+      result = await llmChain.invoke({
+        input: markdown,
+        format_instructions: parser.getFormatInstructions(),
+      });
+      // @ts-ignore
+      content = `#${result?.title}\n\n${result?.content}\n\n${result?.howMany}\n${result?.followup}`;
+    } catch (error: any) {
+      console.error("Error parsing json result", error);
+      console.log("Answer", answer);
+
+      result = await fixParser(parser, answer, llmCallback);
+
+      content = `#${result?.title}\n\n${result?.content}\n\n${result?.howMany}\n${result?.followup}`;
+      console.log("Fixed Result", result);
+    }
+    console.log("\nAnswer:\n", result);
+    const output = result;
+    if (output) {
+      return output;
+    }
+  } catch (error: any) {
+    console.error("Error while extracting pagination urls", error);
+    return undefined;
+  }
+}
 
 export async function batchAnswer(
   fields: {

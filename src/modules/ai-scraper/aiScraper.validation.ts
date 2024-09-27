@@ -73,6 +73,7 @@ const AiIdentifierSchema = z.object({
     markdown: z.string({
       required_error: "Markdown is required",
     }),
+    navContent: z.string({}).optional(),
     userId: z.string({
       required_error: "User ID is required",
     }),

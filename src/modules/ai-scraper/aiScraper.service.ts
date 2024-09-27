@@ -67,6 +67,7 @@ import {
   clearSchema,
   convertSchemaToPrompt,
   fixParser,
+  getPaginationInfo,
   handleSchemaTypeNested,
   streamAIV2Response,
 } from "../../utils/aiScraper.utils.js";
@@ -446,8 +447,16 @@ export async function askAIAPI(req: Request, res: Response) {
 
 export async function identifyContent(req: Request, res: Response) {
   try {
-    const { markdown, userId, url, screenshot, isError, httpStatus } =
-      req.body as AiIdentifierBodyRequest;
+    const {
+      markdown,
+      navContent,
+      userId,
+      url,
+      screenshot,
+      isError,
+      httpStatus,
+    } = req.body as AiIdentifierBodyRequest;
+    console.log("Nav Content \n", navContent);
     const context = limitTokens(markdown, 125_000);
     let inputTokens = 0;
     let outputTokens = 0;
@@ -455,16 +464,27 @@ export async function identifyContent(req: Request, res: Response) {
       | ChatPromptTemplate<InputValues, string>
       | BaseMessagePromptTemplateLike = [
       "user",
-      `URL: {url} \nWeb Content:  \n-----------\n{input}\n-----------\n`,
+      `URL: {url} 
+Web Content:  
+-----------
+{input}
+-----------
+`,
     ];
     let system1: BaseMessagePromptTemplateLike = [
       "system",
       "You are an AI Scraper assistance build by MR Scraper, your task is to create the title for this web and tell user what data can be scraped from the web content given, please provide trully information what data can be scraped in readable format without any additional information that is no included in the web content user given. You should give an additional followup question to user at the end of exaplanation.",
     ];
+
     let systemGuard: BaseMessagePromptTemplateLike = [
       "system",
-      "!!IMPORTANT: \n PROVIDE: \n 1. Clear explanations with READABLE format!  \n  2. Follow-up questions to starting the conversation at the end of the explanation e.g 'Which data do you want to scrape? \n 3. Extra Explanation and description how many data that can be scraped in current page \n 4. Include the pagination URL of the web content if available. Do not add the pagination URL if it is not included in the web content. Make sure it is a valid pagination URL with full url and not something else.",
+      `INSTRUCTIONS:
+1. Provide clear, readable explanations in a well-formatted structure. 
+2. At the end of the explanation, include a follow-up question to initiate further conversation. Example: 'Which data would you like to scrape next?' 
+3. If applicable, explain how much data can be scraped from the current page not all pages!. 
+4. If available, include a valid pagination URL. Ensure it is the full and correct URL. Do not include a pagination URL if it is not present in the web content user given.`,
     ];
+
     let extractorSchema: FunctionDefinition = {
       name: "extractor",
       description: "Extracts fields from the input.",
@@ -625,6 +645,7 @@ Analyze the image given by user, identify the problem as below:
       if (!isError) {
         result = await llmChain.invoke({
           input: context,
+          navContent: navContent,
           url,
           format_instructions: parser.getFormatInstructions(),
         });
@@ -658,10 +679,14 @@ Analyze the image given by user, identify the problem as below:
       const humanMessage: BaseMessage = new HumanMessage(
         "Identify the web content",
       );
+      let pagination = result?.pagination;
+      if (navContent) {
+        pagination = await getPaginationInfo(navContent, countTokens);
+      }
       const aiMessage: BaseMessage = new AIOutputMessage(
         JSON.stringify({
           data_that_can_be_scraped: content,
-          pagination: result?.pagination,
+          pagination: pagination,
           usage_metadata: cost,
         }),
       );
