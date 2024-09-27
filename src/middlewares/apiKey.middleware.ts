@@ -2,7 +2,7 @@ import { errorResponse } from "../utils/helper.util.js";
 import * as config from "../configs/general.config.js";
 import type { NextFunction, Request, Response } from "express";
 
-const apiUrl = config.platformApiUrl + "/account";
+const apiUrl = config.platformApiUrl + "/scrape-gpt/auth";
 async function validateToken(token: string) {
   console.log("Validate API URL:", apiUrl);
   const bearer = "Bearer " + token;
