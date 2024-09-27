@@ -8,6 +8,7 @@ export interface AiScraperBodyRequest {
 export interface AiIdentifierBodyRequest {
   url: string;
   markdown: string;
+  navContent?: string;
   userId: string;
   isError: boolean;
   httpStatus: number;
