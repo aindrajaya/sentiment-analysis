@@ -40,6 +40,7 @@ import {
 import jsonParser from "../../utils/etl/jsonParser.js";
 import {
   AiIdentifierBodyRequest,
+  AIPropertiesSchema,
   AiScraperApiBodyRequest,
   AiScraperBodyRequest,
   AiScraperV2BodyRequest,
@@ -68,6 +69,7 @@ import {
   convertSchemaToPrompt,
   fixParser,
   getPaginationInfo,
+  handleSchemaTypeAction,
   handleSchemaTypeNested,
   streamAIV2Response,
 } from "../../utils/aiScraper.utils.js";
@@ -333,7 +335,7 @@ export async function askAIAPI(req: Request, res: Response) {
       req.body as AiScraperApiBodyRequest;
     const apiKey = req.headers["X-API-KEY"] as string;
     const context = limitTokens(markdown, 125_000);
-    const { cpSchema, nestedSchema } = clearSchema(schema);
+    const { cpSchema, otherSchema } = clearSchema(schema);
     const schemaPrompt = convertSchemaToPrompt(cpSchema, min, max);
     let inputTokens = 0;
     let outputTokens = 0;
@@ -399,29 +401,71 @@ export async function askAIAPI(req: Request, res: Response) {
       result = await fixParser(parser, answer, llmCallback);
       console.log("Fixed Result", result);
     }
-    if (nestedSchema) {
-      let nestedSystemGuard: BaseMessagePromptTemplateLike = [
-        "system",
-        `IMPORTANT!! DO NOT TO GIVE: \n 1. Information that is not included in web content \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. 3. Do not Halucinate \n\n !!IMPORTANT: \n PROVIDE: \n 1. Readable JSON format as given with unique entries (make sure there is no repeated data)\n\n\n `,
-      ];
+    const handleOtherSchema = async (
+      type: string,
+      otherSchema: AIPropertiesSchema,
+      prevResult: any,
+    ) => {
+      let otherSystemGuard: BaseMessagePromptTemplateLike;
+      let otherSystemPrompt: ChatPromptTemplate;
+      switch (type) {
+        case "nested":
+          otherSystemGuard = [
+            "system",
+            `IMPORTANT!! DO NOT TO GIVE: \n 1. Information that is not included in web content \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. 3. Do not Halucinate \n\n !!IMPORTANT: \n PROVIDE: \n 1. Readable JSON format as given with unique entries (make sure there is no repeated data)\n\n\n `,
+          ];
 
-      const nestedPrompt = ChatPromptTemplate.fromMessages([
-        system1,
-        user,
-        nestedSystemGuard,
-        new MessagesPlaceholder("agent_scratchpad"),
-      ]);
+          otherSystemPrompt = ChatPromptTemplate.fromMessages([
+            system1,
+            user,
+            otherSystemGuard,
+            new MessagesPlaceholder("agent_scratchpad"),
+          ]);
 
-      result = await handleSchemaTypeNested(
-        nestedSchema,
-        schema,
-        min,
-        max,
-        llmCallback,
-        nestedPrompt,
-        result,
-        apiKey,
-      );
+          return await handleSchemaTypeNested(
+            otherSchema,
+            schema,
+            min,
+            max,
+            llmCallback,
+            otherSystemPrompt,
+            prevResult,
+            apiKey,
+          );
+
+        case "action":
+          otherSystemGuard = [
+            "system",
+            `IMPORTANT!! DO NOT TO GIVE: \n 1. Information that is not included in web content \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. 3. Do not Halucinate \n\n !!IMPORTANT: \n PROVIDE: \n 1. Readable JSON format as given with unique entries (make sure there is no repeated data)\n\n\n `,
+          ];
+
+          otherSystemPrompt = ChatPromptTemplate.fromMessages([
+            system1,
+            user,
+            otherSystemGuard,
+            new MessagesPlaceholder("agent_scratchpad"),
+          ]);
+
+          return await handleSchemaTypeAction(
+            otherSchema,
+            schema,
+            min,
+            max,
+            llmCallback,
+            otherSystemPrompt,
+            prevResult,
+            apiKey,
+          );
+
+        default:
+          break;
+      }
+    };
+    if (otherSchema) {
+      const types = Object.keys(otherSchema).map((type) => type);
+      for (const type of types) {
+        result = await handleOtherSchema(type, otherSchema[type], result);
+      }
     }
     console.log("\nAnswer:\n", result);
     const output = result;
