@@ -30,7 +30,8 @@ export type AITypesSchema =
 
 export type AIPropertiesSchema = {
   [key: string]: {
-    type: AITypesSchema | "nested";
+    type: AITypesSchema | "nested" | "action";
+    action?: "click" | "scroll" | "wait" | "type" | "select";
     description: string;
     properties?: AIPropertiesSchema;
     items?: AIItemsSchema;
