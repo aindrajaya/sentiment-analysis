@@ -40,6 +40,7 @@ import {
   UsageMetadata,
 } from "./langchain/callbacks/llm/types/interfacte.js";
 import { RunnableSequence } from "@langchain/core/runnables";
+import { GetActionableWebContentTool } from "./langchain/tools/getWebContent.js";
 
 export async function getPaginationInfo(
   markdown: string,
@@ -497,20 +498,23 @@ export const convertSchemaToPrompt = (
   return prompt;
 };
 
-export const isNested = (
+export const detectOtherSchema = (
   props: AIPropertiesSchema,
   originalProps: AIPropertiesSchema,
-): AIPropertiesSchema | undefined => {
-  let nestedSchema: AIPropertiesSchema | undefined = undefined;
+): { [key: string]: AIPropertiesSchema } | undefined => {
+  let otherSchema: { [key: string]: AIPropertiesSchema } | undefined =
+    undefined;
   const keys = Object.keys(props).map((key) => key);
   for (const key of keys) {
     console.log("Key", key);
     if (props[key].type === "nested") {
-      if (!nestedSchema) {
-        nestedSchema = {};
+      if (!otherSchema?.nested) {
+        otherSchema = {
+          nested: {},
+        };
       }
-      nestedSchema[key] = props[key];
-      console.log("ada nested nih", nestedSchema);
+      otherSchema.nested[key] = props[key];
+      console.log("ada nested nih", otherSchema.nested[key]);
       // @ts-ignore
       originalProps![key] = props[key].schema!;
       console.log(originalProps[key]);
@@ -519,35 +523,55 @@ export const isNested = (
         type: "string",
         description: `URL for nested ${key}`,
       };
+    } else if (props[key].type === "action") {
+      if (!otherSchema?.action) {
+        otherSchema = {
+          action: {},
+        };
+      }
+      otherSchema.action[key] = props[key];
+      console.log("ada browser action nih", otherSchema.action);
+      // @ts-ignore
+      originalProps![key] = props[key].schema!;
+      console.log(originalProps[key]);
+      props[`${key}_javascript_href`] = {
+        type: "string",
+        description: `Selector to ${props[key].action!}able content for the ${key}, currently it must be a javascript href/link of ${key}`,
+      };
+      delete props[key];
     } else if (props![key].type === "object") {
-      return isNested(props[key].properties!, originalProps[key].properties!);
+      return detectOtherSchema(
+        props[key].properties!,
+        originalProps[key].properties!,
+      );
     } else if (props![key].type === "array") {
       if (props![key].items!.type === "object") {
-        return isNested(
+        return detectOtherSchema(
           props![key].items!.properties!,
           originalProps[key].items?.properties!,
         );
       }
     }
   }
-  return nestedSchema;
+  return otherSchema;
 };
 
 export const clearSchema = (schema: AIOutputSchema) => {
   const cpSchema = structuredClone(schema);
   if (cpSchema.type === "object") {
-    console.log("masuk");
-    const nestedSchema = isNested(cpSchema.properties!, schema.properties!);
-    console.log("Nested Schema clear schema layer", nestedSchema);
-    return { cpSchema, nestedSchema };
+    const otherSchema = detectOtherSchema(
+      cpSchema.properties!,
+      schema.properties!,
+    );
+    return { cpSchema, otherSchema };
   } else if (cpSchema.type === "array" && cpSchema.items!.type == "object") {
-    const nestedSchema = isNested(
+    const otherSchema = detectOtherSchema(
       cpSchema.items!.properties!,
       schema.items!.properties!,
     );
-    return { cpSchema, nestedSchema };
+    return { cpSchema, otherSchema };
   }
-  return { cpSchema, nestedSchema: undefined };
+  return { cpSchema, otherSchema: undefined };
 };
 
 export const fixParser = async (
@@ -681,6 +705,117 @@ export const handleSchemaTypeNested = async (
   for (const nested of nestedResult) {
     const key = keys[index].split("_url")[0];
     let finalResult = nested.output?.data;
+
+    parentResult = await fixParser(
+      originalParser,
+      `${JSON.stringify(parentResult)}\n\n ${key}: ${JSON.stringify(finalResult.data ?? finalResult)}`,
+      llmCallback,
+    );
+    index++;
+  }
+
+  return parentResult;
+};
+
+export const handleSchemaTypeAction = async (
+  actionSchema: AIPropertiesSchema,
+  schema: AIOutputSchema,
+  min: number,
+  max: number,
+  llmCallback: OpenAICallbackHandlerReturn,
+  prompt: PromptTemplate | ChatPromptTemplate,
+  parentResult: any,
+  apiKey: string,
+) => {
+  const test = z.object({ data: z.any() });
+  console.log(actionSchema);
+  const originalSchema = eval(jsonSchemaToZod(schema));
+  const originalParser = StructuredOutputParser.fromZodSchema(originalSchema);
+  const keys = Object.keys(actionSchema).map(
+    (key) => (key += "_javascript_href"),
+  );
+  console.log("Keys", keys);
+  let actionResult = [];
+  for (const key of keys) {
+    const originalKey = key.split("_javascript_href")[0];
+    const items: AIItemsSchema = {
+      type: actionSchema[originalKey].schema!.type,
+      description: actionSchema[originalKey].schema!.description,
+    };
+    if (actionSchema[originalKey].schema!.properties) {
+      items.properties = {
+        key: {
+          type: "string",
+          description: `can be a name/id/index for the relation to the web content`,
+        },
+        ...actionSchema[originalKey].schema!.properties,
+      };
+    } else if (actionSchema[originalKey].schema!.items) {
+      items.items = {
+        type: "object",
+        description: `List of ${originalKey}`,
+        // @ts-ignore
+        properties: {
+          key: {
+            type: "string",
+            description: `can be a name/id/index for the relation to the web content`,
+          },
+          [`${originalKey}`]: actionSchema[originalKey].schema!.items,
+        },
+      };
+    }
+
+    const currentSchema: AIOutputSchema = {
+      type: "object",
+      description: `Final response for ${originalKey}`,
+      properties: {
+        data: {
+          type: "array",
+          description: `List of ${originalKey}`,
+          items,
+        },
+      },
+    };
+    // const currentSchema = nestedSchema[originalKey].schema!;
+    const schemaPrompt = convertSchemaToPrompt(currentSchema);
+
+    const model = new ChatOpenAI({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      callbacks: [llmCallback],
+    });
+    console.log(currentSchema);
+    const finalResponseSchema = eval(jsonSchemaToZod(currentSchema));
+    model.pipe(new JsonOutputParser());
+    const tools = [
+      GetActionableWebContentTool(apiKey, actionSchema[originalKey].action!),
+    ];
+    const agent = await createReActAgent({
+      model,
+      tools,
+      prompt: prompt,
+      finalResponseSchema,
+      streamRunnable: false,
+      outputKey: "data",
+    });
+    const runnable = new AgentExecutor({
+      agent,
+      tools,
+      verbose: true,
+    });
+
+    actionResult.push(
+      runnable.invoke({
+        input: `${JSON.stringify(parentResult)}`,
+        user_want: `${originalKey}(${schemaPrompt}) for each data from nested web content in each ${key}, then combine it with the web content given`,
+      }),
+    );
+  }
+  actionResult = await Promise.all(actionResult);
+  let index = 0;
+  for (const action of actionResult) {
+    const key = keys[index].split("_javascript_href")[0];
+    let finalResult = action.output?.data;
 
     parentResult = await fixParser(
       originalParser,
