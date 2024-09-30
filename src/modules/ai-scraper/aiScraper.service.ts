@@ -333,7 +333,8 @@ export async function askAIAPI(req: Request, res: Response) {
   try {
     const { url, markdown, schema, min, max } =
       req.body as AiScraperApiBodyRequest;
-    const apiKey = req.headers["X-API-KEY"] as string;
+    const apiKey = req.headers["x-api-key"] as string;
+    console.log("API KEYYYYY", apiKey);
     const context = limitTokens(markdown, 125_000);
     const { cpSchema, otherSchema } = clearSchema(schema);
     const schemaPrompt = convertSchemaToPrompt(cpSchema, min, max);
@@ -402,6 +403,7 @@ export async function askAIAPI(req: Request, res: Response) {
       console.log("Fixed Result", result);
     }
     const handleOtherSchema = async (
+      apiKey: string,
       type: string,
       otherSchema: AIPropertiesSchema,
       prevResult: any,
@@ -464,7 +466,12 @@ export async function askAIAPI(req: Request, res: Response) {
     if (otherSchema) {
       const types = Object.keys(otherSchema).map((type) => type);
       for (const type of types) {
-        result = await handleOtherSchema(type, otherSchema[type], result);
+        result = await handleOtherSchema(
+          apiKey,
+          type,
+          otherSchema[type],
+          result,
+        );
       }
     }
     console.log("\nAnswer:\n", result);
