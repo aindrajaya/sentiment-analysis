@@ -727,6 +727,7 @@ export const handleSchemaTypeAction = async (
   parentResult: any,
   apiKey: string,
 ) => {
+  console.log("api key", apiKey);
   const test = z.object({ data: z.any() });
   console.log(actionSchema);
   const originalSchema = eval(jsonSchemaToZod(schema));
@@ -807,7 +808,7 @@ export const handleSchemaTypeAction = async (
     actionResult.push(
       runnable.invoke({
         input: `${JSON.stringify(parentResult)}`,
-        user_want: `${originalKey}(${schemaPrompt}) for each data from nested web content in each ${key}, then combine it with the web content given`,
+        user_want: `${originalKey}(${schemaPrompt}) for each data from web content in the ${key} urls, then combine it with the web content given`,
       }),
     );
   }
