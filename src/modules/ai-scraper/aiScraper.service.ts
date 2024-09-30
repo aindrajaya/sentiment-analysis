@@ -4,7 +4,7 @@ import { Request, Response } from "express";
 import { z } from "zod";
 import { jsonSchemaToZod } from "json-schema-to-zod";
 // ================= Langhchain libs ====================
-import { BaseMessage, HumanMessage } from "@langchain/core/messages";
+import { BaseMessage, HumanMessage, AIMessage } from "@langchain/core/messages";
 import { CohereRerank } from "@langchain/cohere";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
@@ -18,13 +18,15 @@ import {
   MessagesPlaceholder,
 } from "@langchain/core/prompts";
 import { JsonOutputParser } from "@langchain/core/output_parsers";
-import { JsonOutputFunctionsParser } from "langchain/output_parsers";
 import { FunctionDefinition } from "@langchain/core/language_models/base";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { StructuredOutputParser } from "langchain/output_parsers";
+import {
+  JsonOutputFunctionsParser,
+  StructuredOutputParser,
+} from "langchain/output_parsers";
 import { RunnableSequence } from "@langchain/core/runnables";
 // ================== Internal libs =====================
-import { MongoDBChatMessageHistory } from "../../utils/memory/chat_history.js";
+import { MongoDBChatMessageHistory } from "../../utils/memory/chatHistory.js";
 import {
   countTokens,
   errorResponse,
@@ -38,6 +40,7 @@ import {
 import jsonParser from "../../utils/etl/jsonParser.js";
 import {
   AiIdentifierBodyRequest,
+  AIPropertiesSchema,
   AiScraperApiBodyRequest,
   AiScraperBodyRequest,
   AiScraperV2BodyRequest,
@@ -61,9 +64,12 @@ import openAICallbackHandler from "../../utils/langchain/callbacks/llm/openAiCb.
 import { AIOutputMessage } from "../../utils/langchain/message/ai.js";
 import { SearchNestedWebContentTool } from "../../utils/langchain/tools/searchNestedWebContent.js";
 import {
+  batchAnswer,
   clearSchema,
   convertSchemaToPrompt,
   fixParser,
+  getPaginationInfo,
+  handleSchemaTypeAction,
   handleSchemaTypeNested,
   streamAIV2Response,
 } from "../../utils/aiScraper.utils.js";
@@ -164,6 +170,7 @@ export async function askAi(req: Request, res: Response) {
 export async function askAiV2(
   payload: AiScraperV2BodyRequest,
   callback: (response: AiScraperV2BodyResponse, isFinal: boolean) => void,
+  apiKey: string,
   streaming: boolean = true,
 ) {
   try {
@@ -176,9 +183,26 @@ export async function askAiV2(
       memory.addSessionUsageMetadata(usageMetadata);
     };
     const llmCallback = openAICallbackHandler(true, countTokens);
+    const batchAnswers: string[] = [];
+    const splitAnswer = async (
+      markdown: string,
+      url: string,
+      question: string,
+    ) =>
+      await batchAnswer(
+        { markdown, url, question, contentIdentifier },
+        llmCallback,
+        async (data: object, isFinal) => {
+          console.log("Chunk Answer", data, isFinal);
+          callback(data as unknown as AiScraperV2BodyResponse, isFinal);
+          if (isFinal) {
+            batchAnswers.push(JSON.stringify(data));
+          }
+        },
+      );
     const tools = [
-      SearchNestedWebContentTool,
-      PaginateTool,
+      SearchNestedWebContentTool(apiKey),
+      PaginateTool(apiKey, splitAnswer),
       new SearchWebContentTool(pageContent),
     ];
     const model = new ChatOpenAI({
@@ -190,17 +214,38 @@ export async function askAiV2(
     const prompt = ChatPromptTemplate.fromMessages([
       [
         "system",
-        `You are an AI Scraper assistance build by MR Scraper. Your task is to provide what user want to scrape/get from available web content at ${webPage}, you can use available tools that will help you to answer. And if user ask to get all of data, you should give them all item and all data field like this ${contentIdentifier}. \n\n IMPORTANT!! if user ask to get data from pagination page eg. 'Get all data from page 2', ${pagination && Array.isArray(pagination) && pagination.length > 0 ? "ensure you use this pagintaion url" + JSON.stringify(pagination) : "please tell there is no Pagination Found"} else just use search tool. \n\n NOTE: Currently your in a beta version so you still in learning proccess to get better scraping data.`,
+        `You are an AI Scraper Assistant developed by MR Scraper. Your task is to extract the data the user requests from available web content at ${webPage}. If the user asks for all data, provide every item and field, ensuring it matches the structure specified in ${contentIdentifier}. ensure you provide as much data as possible, with a minimum of 1 and a maximum of 100 items, ensuring each entry is unique and relevant to the request.
+
+IMPORTANT: If the user requests data from paginated content, ${pagination && Array.isArray(pagination) && pagination.length > 0 ? "ensure you use the following pagination URLs: " + JSON.stringify(pagination) : "notify the user that no pagination was found"}. Otherwise, use the search-web-content-tool to gather information. 
+
+You have access to the following tools:
+
+${tools.map((tool) => `- ${tool.name}( ${tool.description} )`).join("\n")}
+
+NOTE: You are currently in a beta phase, and your performance will improve over time as you continue learning to scrape data effectively.`,
       ],
       new MessagesPlaceholder("chat_history"),
       ["user", "{input}"],
       [
         "system",
-        "!!IMPORTANT DO NOT TO GIVE: \n 1. Information that is not included in the search results or history.. \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. You can tell the user the data may not meet their needs, or inform them that ScrapeGPT is still in beta version, and our developers are working hard to improve its performance. \n\n !!IMPORTANT: \n PROVIDE: \n 1. All information as many as possible \n 2. Clear explanations and extra descriptions with follow-up questions at the end of the explanation e.g 'Do you want to know more about this?' or  'Which data do you want to scrape?' or if there is link to detailed page you can ask user 'Would you like to scrape the detail? \n 4. Readable JSON format with unique entries (make sure there is no repeated data) and snake_case key format \n 5. Relevance to the input \n' ",
+        `IMPORTANT!: DO NOT provide:
+1. Information that is not included in the search results or chat history.
+2. Repeated or duplicate JSON entries. Ensure all results are unique. 
+If the data doesn't fully meet user expectations, inform them that ScrapeGPT is in beta and improvements are ongoing.
+
+IMPORTANT!: Ensure you PROVIDE:
+1. As much relevant information as possible, clearly explaining the results. If you cannot provide all available data, include a disclaimer that the data shown is a sample, and inform the user that they can request more by specifying the number of items they would like to get.
+2. Unique, non-repeated entries in snake_case JSON format.
+3. Relevant follow-up questions like: 'Would you like more details on this?' or 'Which specific data do you want to scrape?' If detailed pages are available, ask, 'Would you like to scrape the detail?'
+4. A clear and structured response, with relevance to the user's input.
+
+Begin! Reminder to ALWAYS respond with a valid json format {{desc: YOUR_ANSWER, json: STRING_JSON_RESULT }}. Use tools if necessary. Respond directly if appropriate.
+
+`,
       ],
       new MessagesPlaceholder("agent_scratchpad"),
     ]);
-    model.pipe(new JsonOutputParser());
+    model.pipe(new JsonOutputFunctionsParser());
 
     const finalResponseSchema = z.object({
       desc: z.string().describe("The explanation of scraped data"),
@@ -219,7 +264,6 @@ export async function askAiV2(
     });
     const runnable = new AgentExecutor({
       agent,
-      // @ts-ignore
       tools,
       verbose: true,
     });
@@ -229,6 +273,15 @@ export async function askAiV2(
       inputMessagesKey: "input",
       historyMessagesKey: "chat_history",
       outputMessagesKey: "output",
+      onExitHistory: async (conversationId: number) => {
+        if (batchAnswers.length > 0) {
+          await memory.addBatchAnswer(batchAnswers, conversationId);
+          // await memory.updateAiAnswer(
+          //   JSON.stringify(batchAnswers),
+          //   conversationId,
+          // );
+        }
+      },
     });
 
     const config: RunnableConfig = {
@@ -236,10 +289,21 @@ export async function askAiV2(
     };
 
     if (streaming) {
+      const streamCallback = async (
+        data: AiScraperV2BodyResponse,
+        isFinal: boolean,
+        isFixed: boolean = false,
+      ) => {
+        if (isFinal && isFixed) {
+          const id = (await memory.getMessagesLength()) + 1;
+          await memory.updateAiAnswer(JSON.stringify(data), id);
+        }
+        return callback(data, isFinal);
+      };
       const logStream = await withHistory.streamLog({ input: task }, config);
       await streamAIV2Response(
         logStream,
-        callback,
+        streamCallback,
         userId,
         sessionId,
         scraperId,
@@ -269,8 +333,10 @@ export async function askAIAPI(req: Request, res: Response) {
   try {
     const { url, markdown, schema, min, max } =
       req.body as AiScraperApiBodyRequest;
+    const apiKey = req.headers["x-api-key"] as string;
+    console.log("API KEYYYYY", apiKey);
     const context = limitTokens(markdown, 125_000);
-    const { cpSchema, nestedSchema } = clearSchema(schema);
+    const { cpSchema, otherSchema } = clearSchema(schema);
     const schemaPrompt = convertSchemaToPrompt(cpSchema, min, max);
     let inputTokens = 0;
     let outputTokens = 0;
@@ -336,28 +402,77 @@ export async function askAIAPI(req: Request, res: Response) {
       result = await fixParser(parser, answer, llmCallback);
       console.log("Fixed Result", result);
     }
-    if (nestedSchema) {
-      let nestedSystemGuard: BaseMessagePromptTemplateLike = [
-        "system",
-        `IMPORTANT!! DO NOT TO GIVE: \n 1. Information that is not included in web content \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. 3. Do not Halucinate \n\n !!IMPORTANT: \n PROVIDE: \n 1. Readable JSON format as given with unique entries (make sure there is no repeated data)\n\n\n `,
-      ];
+    const handleOtherSchema = async (
+      apiKey: string,
+      type: string,
+      otherSchema: AIPropertiesSchema,
+      prevResult: any,
+    ) => {
+      let otherSystemGuard: BaseMessagePromptTemplateLike;
+      let otherSystemPrompt: ChatPromptTemplate;
+      switch (type) {
+        case "nested":
+          otherSystemGuard = [
+            "system",
+            `IMPORTANT!! DO NOT TO GIVE: \n 1. Information that is not included in web content \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. 3. Do not Halucinate \n\n !!IMPORTANT: \n PROVIDE: \n 1. Readable JSON format as given with unique entries (make sure there is no repeated data)\n\n\n `,
+          ];
 
-      const nestedPrompt = ChatPromptTemplate.fromMessages([
-        system1,
-        user,
-        nestedSystemGuard,
-        new MessagesPlaceholder("agent_scratchpad"),
-      ]);
+          otherSystemPrompt = ChatPromptTemplate.fromMessages([
+            system1,
+            user,
+            otherSystemGuard,
+            new MessagesPlaceholder("agent_scratchpad"),
+          ]);
 
-      result = await handleSchemaTypeNested(
-        nestedSchema,
-        schema,
-        min,
-        max,
-        llmCallback,
-        nestedPrompt,
-        result,
-      );
+          return await handleSchemaTypeNested(
+            otherSchema,
+            schema,
+            min,
+            max,
+            llmCallback,
+            otherSystemPrompt,
+            prevResult,
+            apiKey,
+          );
+
+        case "action":
+          otherSystemGuard = [
+            "system",
+            `IMPORTANT!! DO NOT TO GIVE: \n 1. Information that is not included in web content \n 2. If there's a lot of data, ensure no repeated JSON results. All entries must be unique. 3. Do not Halucinate \n\n !!IMPORTANT: \n PROVIDE: \n 1. Readable JSON format as given with unique entries (make sure there is no repeated data)\n\n\n `,
+          ];
+
+          otherSystemPrompt = ChatPromptTemplate.fromMessages([
+            system1,
+            user,
+            otherSystemGuard,
+            new MessagesPlaceholder("agent_scratchpad"),
+          ]);
+
+          return await handleSchemaTypeAction(
+            otherSchema,
+            schema,
+            min,
+            max,
+            llmCallback,
+            otherSystemPrompt,
+            prevResult,
+            apiKey,
+          );
+
+        default:
+          break;
+      }
+    };
+    if (otherSchema) {
+      const types = Object.keys(otherSchema).map((type) => type);
+      for (const type of types) {
+        result = await handleOtherSchema(
+          apiKey,
+          type,
+          otherSchema[type],
+          result,
+        );
+      }
     }
     console.log("\nAnswer:\n", result);
     const output = result;
@@ -383,8 +498,16 @@ export async function askAIAPI(req: Request, res: Response) {
 
 export async function identifyContent(req: Request, res: Response) {
   try {
-    const { markdown, userId, url, screenshot, isError, httpStatus } =
-      req.body as AiIdentifierBodyRequest;
+    const {
+      markdown,
+      navContent,
+      userId,
+      url,
+      screenshot,
+      isError,
+      httpStatus,
+    } = req.body as AiIdentifierBodyRequest;
+    console.log("Nav Content \n", navContent);
     const context = limitTokens(markdown, 125_000);
     let inputTokens = 0;
     let outputTokens = 0;
@@ -392,16 +515,27 @@ export async function identifyContent(req: Request, res: Response) {
       | ChatPromptTemplate<InputValues, string>
       | BaseMessagePromptTemplateLike = [
       "user",
-      `URL: {url} \nWeb Content:  \n-----------\n{input}\n-----------\n`,
+      `URL: {url} 
+Web Content:  
+-----------
+{input}
+-----------
+`,
     ];
     let system1: BaseMessagePromptTemplateLike = [
       "system",
       "You are an AI Scraper assistance build by MR Scraper, your task is to create the title for this web and tell user what data can be scraped from the web content given, please provide trully information what data can be scraped in readable format without any additional information that is no included in the web content user given. You should give an additional followup question to user at the end of exaplanation.",
     ];
+
     let systemGuard: BaseMessagePromptTemplateLike = [
       "system",
-      "!!IMPORTANT: \n PROVIDE: \n 1. Clear explanations with READABLE format!  \n  2. Follow-up questions to starting the conversation at the end of the explanation e.g 'Which data do you want to scrape? \n 3. Extra Explanation and description how many data that can be scraped in current page \n 4. Include the pagination URL of the web content if available. Do not add the pagination URL if it is not included in the web content. Make sure it is a valid pagination URL with full url and not something else.",
+      `INSTRUCTIONS:
+1. Provide clear, readable explanations in a well-formatted structure. 
+2. At the end of the explanation, include a follow-up question to initiate further conversation. Example: 'Which data would you like to scrape next?' 
+3. If applicable, explain how much data can be scraped from the current page not all pages!. 
+4. If available, include a valid pagination URL. Ensure it is the full and correct URL. Do not include a pagination URL if it is not present in the web content user given.`,
     ];
+
     let extractorSchema: FunctionDefinition = {
       name: "extractor",
       description: "Extracts fields from the input.",
@@ -562,6 +696,7 @@ Analyze the image given by user, identify the problem as below:
       if (!isError) {
         result = await llmChain.invoke({
           input: context,
+          navContent: navContent,
           url,
           format_instructions: parser.getFormatInstructions(),
         });
@@ -595,10 +730,14 @@ Analyze the image given by user, identify the problem as below:
       const humanMessage: BaseMessage = new HumanMessage(
         "Identify the web content",
       );
+      let pagination = result?.pagination;
+      if (navContent) {
+        pagination = await getPaginationInfo(navContent, countTokens);
+      }
       const aiMessage: BaseMessage = new AIOutputMessage(
         JSON.stringify({
           data_that_can_be_scraped: content,
-          pagination: result?.pagination,
+          pagination: pagination,
           usage_metadata: cost,
         }),
       );

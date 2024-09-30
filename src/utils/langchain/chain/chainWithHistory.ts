@@ -18,12 +18,14 @@ import {
 } from "@langchain/core/chat_history";
 import { Run } from "@langchain/core/tracers/base";
 import { AIOutputMessage } from "../message/ai.js";
+import { MongoDBChatMessageHistory } from "../../memory/chatHistory.js";
 type GetSessionHistoryCallable = (
   ...args: Array<any>
 ) =>
   | Promise<BaseChatMessageHistory | BaseListChatMessageHistory>
   | BaseChatMessageHistory
-  | BaseListChatMessageHistory;
+  | BaseListChatMessageHistory
+  | MongoDBChatMessageHistory;
 export interface RunnableWithMessageHistoryInputs<RunInput, RunOutput>
   extends Omit<RunnableBindingArgs<RunInput, RunOutput>, "bound" | "config"> {
   runnable: Runnable<RunInput, RunOutput>;
@@ -31,6 +33,7 @@ export interface RunnableWithMessageHistoryInputs<RunInput, RunOutput>
   inputMessagesKey?: string;
   outputMessagesKey?: string;
   historyMessagesKey?: string;
+  onExitHistory?: (conversationId: number) => Promise<void>;
   config?: RunnableConfig;
 }
 
@@ -42,6 +45,7 @@ export class ChainWithMessageHistory<
   inputMessagesKey?: string;
   outputMessagesKey?: string;
   historyMessagesKey?: string;
+  onExitHistory?: (conversationId: number) => Promise<void>;
   getMessageHistory: GetSessionHistoryCallable;
   constructor(fields: RunnableWithMessageHistoryInputs<RunInput, RunOutput>) {
     let historyChain = new RunnableLambda({
@@ -73,6 +77,7 @@ export class ChainWithMessageHistory<
     this.inputMessagesKey = fields.inputMessagesKey;
     this.outputMessagesKey = fields.outputMessagesKey;
     this.historyMessagesKey = fields.historyMessagesKey;
+    this.onExitHistory = fields.onExitHistory;
   }
   _getInputMessages(
     inputValue: string | BaseMessage | Array<BaseMessage> | Record<string, any>,
@@ -193,7 +198,8 @@ export class ChainWithMessageHistory<
     }
     console.log("OUTPUT VALUE", outputValue);
     const outputMessages = this._getOutputMessages(outputValue);
-    await history.addMessages([...inputMessages, ...outputMessages]);
+    const id = await history.addMessages([...inputMessages, ...outputMessages]);
+    if (this.onExitHistory) await this.onExitHistory(id);
   }
   async _mergeConfig(
     ...configs: Array<RunnableConfig | undefined>

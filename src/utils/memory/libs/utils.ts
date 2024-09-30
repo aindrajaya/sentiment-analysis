@@ -10,14 +10,27 @@ import {
   ToolMessageFieldsWithToolCallId,
 } from "@langchain/core/messages";
 
+export interface MongoStoredMessage extends StoredMessage {
+  id: number;
+}
 /**
  * Transforms an array of `BaseMessage` instances into an array of
  * `StoredMessage` instances. It does this by calling the `toDict` method
  * on each `BaseMessage`, which returns a `StoredMessage`. This function
  * is used to prepare chat messages for storage.
  */
-export function mapChatMessagesToStoredMongoMessages(messages: BaseMessage[]) {
-  return messages.map((message) => message.toDict());
+export function mapChatMessagesToStoredMongoMessages(
+  messages: BaseMessage[],
+  id: number,
+) {
+  const stored: MongoStoredMessage[] = messages.map((message) => {
+    const storedMessage = message.toDict();
+    return {
+      id,
+      ...storedMessage,
+    };
+  });
+  return stored;
 }
 
 /**
