@@ -28,7 +28,7 @@ export const PaginateTool = (
       console.log("question", question);
       let markdown: Promise<string[]> | any = [];
       for (const url of urls) {
-        markdown.push(extractMarkdown("click", url, apiKey));
+        markdown.push(extractMarkdown("extract", url, apiKey));
       }
 
       markdown = await Promise.all(markdown);
