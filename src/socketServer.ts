@@ -3,6 +3,7 @@ import { AiScraperV2BodyRequest } from "./modules/ai-scraper/types/interface.js"
 import { aiScraperV2Validation } from "./modules/ai-scraper/aiScraper.validation.js";
 import socketApiKey from "./middlewares/socketApiKey.middleware.js";
 import { askAiV2 } from "./modules/ai-scraper/aiScraper.service.js";
+import { apiKey } from "./configs/general.config.js";
 
 export default function socketServer(io: Server) {
   io.use((socket, next) =>
@@ -30,10 +31,14 @@ export default function socketServer(io: Server) {
       if (!status) {
         io.to(socket.id).emit("conversation-error", message);
       } else {
-        await askAiV2(payload, (res, isFinal) => {
-          const response = { ...res, isFinal };
-          io.to(socket.id).emit("answer-ai-v2", response);
-        });
+        await askAiV2(
+          payload,
+          (res, isFinal) => {
+            const response = { ...res, isFinal };
+            io.to(socket.id).emit("answer-ai-v2", response);
+          },
+          socket.handshake.auth.apiKey,
+        );
       }
     });
   });

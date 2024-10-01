@@ -73,6 +73,7 @@ const AiIdentifierSchema = z.object({
     markdown: z.string({
       required_error: "Markdown is required",
     }),
+    navContent: z.string({}).optional().nullable(),
     userId: z.string({
       required_error: "User ID is required",
     }),
@@ -95,13 +96,18 @@ const AiIdentifierSchema = z.object({
   }),
 });
 const typeSchema = z.enum(
-  ["object", "array", "string", "number", "boolean", "nested"],
+  ["object", "array", "string", "number", "boolean", "nested", "action"],
   {
     required_error: "Type is required",
     invalid_type_error:
       "Type must be in object, array, string, number, boolean, nested types",
   },
 );
+
+const actionSchema = z.enum(["click", "type", "select", "scroll", "wait"], {
+  required_error: "Action is required",
+  invalid_type_error: "Action must be in click, type, select, scroll, wait",
+});
 
 const propertiesSchema = z.record(
   z.string().nonempty({ message: "Key is required" }),
@@ -111,6 +117,7 @@ const propertiesSchema = z.record(
       description: z.string({
         required_error: "Description is required",
       }),
+      action: actionSchema.optional(),
       properties: z
         .record(
           z.string().nonempty({ message: "Key is required" }),
@@ -209,10 +216,19 @@ const propertiesSchema = z.record(
           code: z.ZodIssueCode.custom,
           message: "Schema is required for nested type",
         });
-      } else if (value.type !== "nested" && value.schema) {
+      } else if (
+        !value.type.includes("action") &&
+        !value.type.includes("nested") &&
+        value.schema
+      ) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: "Schema is not allowed for non-nested type",
+        });
+      } else if (value.type === "action" && !value.action) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Action is required for action type",
         });
       } else if (value.type !== "object" && value.properties) {
         ctx.addIssue({

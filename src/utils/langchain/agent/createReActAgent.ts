@@ -74,9 +74,11 @@ export async function createReActAgent({
 
   const responseOpenAIFunction = {
     name: "response",
-    description: "Return the response to the user",
+    description: "Use this function to return the final output of the agent.",
     parameters: zodToJsonSchema(responseSchema),
   };
+
+  console.log(responseOpenAIFunction);
 
   const structuredOutputParser = (
     message: AIMessage,

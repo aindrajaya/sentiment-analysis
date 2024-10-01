@@ -11,19 +11,25 @@ import { FaissStore } from "@langchain/community/vectorstores/faiss";
 import { CohereRerank } from "@langchain/cohere";
 import extractMarkdown from "../../etl/mrscraper.js";
 
-export const SearchNestedWebContentTool = (apiKey: string) =>
+export const GetActionableWebContentTool = (apiKey: string, action: string) =>
   new DynamicStructuredTool({
-    name: "search-nested-web-content",
-    description:
-      "Tool used when you need to search related web content from nested web content like details of the data etc. Please make sure the url are valid with complete url not just the endpoint",
-    schema: z.object({ urls: z.array(z.string()), question: z.string() }),
-    func: async ({ urls, question }) => {
-      console.log("urls", urls);
+    name: "get-actionable-web-content",
+    description: `Tool used when you need to get/search related web content from ${action}able web content. Please make sure the urls are valid href/link and not a halucinate!`,
+    schema: z.object({
+      webUrl: z.string(),
+      urls: z.array(z.string()),
+      question: z.string(),
+    }),
+    func: async ({ webUrl, urls, question }) => {
+      console.log("javascripts", urls);
       console.log("question", question);
       let markdown: Promise<string[]> | any = [];
-      for (const url of urls) {
-        markdown.push(extractMarkdown("extract", url, apiKey));
+      for (const javascript of urls) {
+        if (!javascript.startsWith("javascript:")) {
+          return "Invalid URL, please make sure the urls are start with 'javascript:' and not other";
+        }
       }
+      markdown.push(extractMarkdown("click", webUrl, apiKey, urls));
 
       markdown = await Promise.all(markdown);
 

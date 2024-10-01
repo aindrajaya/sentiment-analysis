@@ -20,7 +20,7 @@ export class SearchWebContentTool extends Tool {
   name = "search-web-content-tool";
 
   description =
-    "Tool used when you need to search related web content to answer user question.";
+    "Tool used when you need to search related web content to answer user question from the current page.";
 
   constructor(data: string, config?: ToolParams) {
     super(config);

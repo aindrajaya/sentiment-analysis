@@ -31,6 +31,7 @@ aiRouter.post(
     askAiV2(
       req.body,
       (result) => successResponse(res, "answered", result, 200),
+      req.headers["X-API-KEY"] as string,
       false,
     ),
 );
